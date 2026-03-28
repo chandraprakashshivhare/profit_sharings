@@ -6,29 +6,24 @@ import { calculateCompanyIncome, calculateCompanyBalance, calculateDirectorIncom
 
 // Helper to set auth cookies
 function setAuthCookies(response, accessToken, refreshToken) {
-  response.cookies.set('access_token', accessToken, {
-    httpOnly: true,
-    secure: false,
-    sameSite: 'lax',
-    maxAge: 900, // 15 minutes
-    path: '/'
-  });
+  // Set access token cookie
+  const accessCookie = `access_token=${accessToken}; Path=/; HttpOnly; SameSite=Lax; Max-Age=900`;
+  const refreshCookie = `refresh_token=${refreshToken}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800`;
   
-  response.cookies.set('refresh_token', refreshToken, {
-    httpOnly: true,
-    secure: false,
-    sameSite: 'lax',
-    maxAge: 604800, // 7 days
-    path: '/'
-  });
+  response.headers.append('Set-Cookie', accessCookie);
+  response.headers.append('Set-Cookie', refreshCookie);
   
   return response;
 }
 
 // Helper to clear auth cookies
 function clearAuthCookies(response) {
-  response.cookies.delete('access_token');
-  response.cookies.delete('refresh_token');
+  const accessCookie = `access_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`;
+  const refreshCookie = `refresh_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`;
+  
+  response.headers.append('Set-Cookie', accessCookie);
+  response.headers.append('Set-Cookie', refreshCookie);
+  
   return response;
 }
 
@@ -359,13 +354,8 @@ export async function POST(request) {
       const accessToken = createAccessToken(director.id, director.email, director.name);
       
       let response = NextResponse.json({ message: 'Token refreshed' });
-      response.cookies.set('access_token', accessToken, {
-        httpOnly: true,
-        secure: false,
-        sameSite: 'lax',
-        maxAge: 900,
-        path: '/'
-      });
+      const accessCookie = `access_token=${accessToken}; Path=/; HttpOnly; SameSite=Lax; Max-Age=900`;
+      response.headers.append('Set-Cookie', accessCookie);
       
       return response;
     }
