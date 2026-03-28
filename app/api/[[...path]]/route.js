@@ -127,6 +127,21 @@ export async function GET(request) {
       return NextResponse.json(directors);
     }
     
+    // Directors - Get by ID
+    if (path.startsWith('/directors/')) {
+      const user = await requireAuth(request);
+      if (user instanceof NextResponse) return user;
+      
+      const id = path.split('/')[2];
+      const director = await db.collection('directors').findOne({ id }, { projection: { password_hash: 0 } });
+      
+      if (!director) {
+        return NextResponse.json({ error: 'Director not found' }, { status: 404 });
+      }
+      
+      return NextResponse.json(director);
+    }
+    
     // Dashboard - Company
     if (path === '/dashboard/company') {
       const user = await requireAuth(request);
@@ -423,6 +438,44 @@ export async function POST(request) {
       return NextResponse.json(transaction);
     }
     
+    // Directors - Create
+    if (path === '/directors') {
+      const user = await requireAuth(request);
+      if (user instanceof NextResponse) return user;
+      
+      const body = await request.json();
+      const { name, email, password } = body;
+      
+      if (!name || !email || !password) {
+        return NextResponse.json({ error: 'Name, email and password are required' }, { status: 400 });
+      }
+      
+      // Check if director exists
+      const existingDirector = await db.collection('directors').findOne({ email: email.toLowerCase() });
+      if (existingDirector) {
+        return NextResponse.json({ error: 'Email already registered' }, { status: 400 });
+      }
+      
+      // Hash password
+      const passwordHash = await hashPassword(password);
+      
+      // Create director
+      const director = {
+        id: uuidv4(),
+        name,
+        email: email.toLowerCase(),
+        password_hash: passwordHash,
+        created_at: new Date(),
+        created_by: user.sub
+      };
+      
+      await db.collection('directors').insertOne(director);
+      
+      // Remove password hash from response
+      const { password_hash, ...directorData } = director;
+      return NextResponse.json(directorData);
+    }
+    
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
     
   } catch (error) {
@@ -497,6 +550,39 @@ export async function PUT(request) {
       return NextResponse.json(transaction);
     }
     
+    // Directors - Update
+    if (path.startsWith('/directors/')) {
+      const id = path.split('/')[2];
+      const body = await request.json();
+      
+      const updateData = {};
+      if (body.name !== undefined) updateData.name = body.name;
+      if (body.email !== undefined) {
+        // Check if email is already taken by another director
+        const existingDirector = await db.collection('directors').findOne({ 
+          email: body.email.toLowerCase(),
+          id: { $ne: id }
+        });
+        if (existingDirector) {
+          return NextResponse.json({ error: 'Email already registered' }, { status: 400 });
+        }
+        updateData.email = body.email.toLowerCase();
+      }
+      updateData.updated_at = new Date();
+      
+      const result = await db.collection('directors').updateOne(
+        { id },
+        { $set: updateData }
+      );
+      
+      if (result.matchedCount === 0) {
+        return NextResponse.json({ error: 'Director not found' }, { status: 404 });
+      }
+      
+      const director = await db.collection('directors').findOne({ id }, { projection: { password_hash: 0 } });
+      return NextResponse.json(director);
+    }
+    
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
     
   } catch (error) {
@@ -536,6 +622,24 @@ export async function DELETE(request) {
       }
       
       return NextResponse.json({ message: 'Transaction deleted' });
+    }
+    
+    // Directors - Delete
+    if (path.startsWith('/directors/')) {
+      const id = path.split('/')[2];
+      
+      // Prevent deleting yourself
+      if (id === user.sub) {
+        return NextResponse.json({ error: 'You cannot delete your own account' }, { status: 400 });
+      }
+      
+      const result = await db.collection('directors').deleteOne({ id });
+      
+      if (result.deletedCount === 0) {
+        return NextResponse.json({ error: 'Director not found' }, { status: 404 });
+      }
+      
+      return NextResponse.json({ message: 'Director deleted' });
     }
     
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
