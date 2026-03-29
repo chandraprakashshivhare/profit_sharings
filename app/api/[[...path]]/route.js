@@ -6,30 +6,36 @@ import { calculateCompanyIncome, calculateCompanyBalance, calculateDirectorIncom
 
 // Helper to set auth cookies
 function setAuthCookies(response, accessToken, refreshToken) {
-  // Set access token cookie
   const isProduction = process.env.NODE_ENV === 'production' || process.env.NEXT_PUBLIC_BASE_URL?.includes('https');
-  const secureFlag = isProduction ? '; Secure' : '';
   
-  const accessCookie = `access_token=${accessToken}; Path=/; HttpOnly; SameSite=Lax; Max-Age=900${secureFlag}`;
-  const refreshCookie = `refresh_token=${refreshToken}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800${secureFlag}`;
+  // Use NextResponse cookie API
+  response.cookies.set({
+    name: 'access_token',
+    value: accessToken,
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: 'lax',
+    maxAge: 900,
+    path: '/'
+  });
   
-  response.headers.append('Set-Cookie', accessCookie);
-  response.headers.append('Set-Cookie', refreshCookie);
+  response.cookies.set({
+    name: 'refresh_token',
+    value: refreshToken,
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: 'lax',
+    maxAge: 604800,
+    path: '/'
+  });
   
   return response;
 }
 
 // Helper to clear auth cookies
 function clearAuthCookies(response) {
-  const isProduction = process.env.NODE_ENV === 'production' || process.env.NEXT_PUBLIC_BASE_URL?.includes('https');
-  const secureFlag = isProduction ? '; Secure' : '';
-  
-  const accessCookie = `access_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secureFlag}`;
-  const refreshCookie = `refresh_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secureFlag}`;
-  
-  response.headers.append('Set-Cookie', accessCookie);
-  response.headers.append('Set-Cookie', refreshCookie);
-  
+  response.cookies.delete('access_token');
+  response.cookies.delete('refresh_token');
   return response;
 }
 
@@ -374,12 +380,16 @@ export async function POST(request) {
       // Create new access token
       const accessToken = createAccessToken(director.id, director.email, director.name);
       
-      const isProduction = process.env.NODE_ENV === 'production' || process.env.NEXT_PUBLIC_BASE_URL?.includes('https');
-      const secureFlag = isProduction ? '; Secure' : '';
-      
       let response = NextResponse.json({ message: 'Token refreshed' });
-      const accessCookie = `access_token=${accessToken}; Path=/; HttpOnly; SameSite=Lax; Max-Age=900${secureFlag}`;
-      response.headers.append('Set-Cookie', accessCookie);
+      response.cookies.set({
+        name: 'access_token',
+        value: accessToken,
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production' || process.env.NEXT_PUBLIC_BASE_URL?.includes('https'),
+        sameSite: 'lax',
+        maxAge: 900,
+        path: '/'
+      });
       
       return response;
     }
