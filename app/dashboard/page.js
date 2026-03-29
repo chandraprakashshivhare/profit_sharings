@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ArrowUpCircle, ArrowDownCircle, TrendingUp, Wallet } from 'lucide-react';
 import { toast } from 'sonner';
+import { apiRequest } from '@/lib/api';
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -40,8 +41,8 @@ export default function DashboardPage() {
       }
 
       const [companyRes, directorRes] = await Promise.all([
-        fetch(companyUrl, { credentials: 'include' }),
-        fetch(directorUrl, { credentials: 'include' })
+        apiRequest(companyUrl),
+        apiRequest(directorUrl)
       ]);
 
       if (companyRes.ok && directorRes.ok) {

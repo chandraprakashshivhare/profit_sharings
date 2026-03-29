@@ -23,9 +23,19 @@ export default function RegisterPage() {
     setLoading(true);
 
     try {
-      await register(name, email, password);
-      toast.success('Registration successful!');
-      router.push('/dashboard');
+      const result = await register(name, email, password);
+      
+      // Check if registration is pending approval
+      if (result.isPending) {
+        toast.success(result.message || 'Registration submitted! Awaiting approval from existing directors.');
+        // Redirect to login page with a message
+        setTimeout(() => {
+          router.push('/login?pending=true');
+        }, 2000);
+      } else {
+        toast.success('Registration successful!');
+        router.push('/dashboard');
+      }
     } catch (error) {
       toast.error(error.message);
     } finally {

@@ -362,11 +362,12 @@ export async function POST(request) {
       const { password_hash, ...directorData } = director;
       
       if (status === 'pending') {
-        // Don't create tokens for pending directors
+        // Don't create tokens or login for pending directors
         return NextResponse.json({
           ...directorData,
-          message: 'Registration submitted! Your account is pending approval from existing directors.'
-        });
+          message: 'Registration submitted! Your account is pending approval from existing directors.',
+          requiresApproval: true
+        }, { status: 201 });
       }
       
       // Create tokens for auto-approved first director
@@ -376,7 +377,8 @@ export async function POST(request) {
       let response = NextResponse.json({
         ...directorData,
         access_token: accessToken,
-        refresh_token: refreshToken
+        refresh_token: refreshToken,
+        message: 'Welcome! You are the first director.'
       });
       response = setAuthCookies(response, accessToken, refreshToken);
       

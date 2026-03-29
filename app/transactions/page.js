@@ -14,6 +14,7 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Plus, Pencil, Trash2, ArrowUpCircle, ArrowDownCircle, Repeat, ArrowRightLeft } from 'lucide-react';
 import { toast } from 'sonner';
+import { apiRequest } from '@/lib/api';
 
 export default function TransactionsPage() {
   const [transactions, setTransactions] = useState([]);
@@ -42,7 +43,7 @@ export default function TransactionsPage() {
 
   const fetchTransactions = async () => {
     try {
-      const response = await fetch('/api/transactions', { credentials: 'include' });
+      const response = await apiRequest('/api/transactions');
       if (response.ok) {
         const data = await response.json();
         setTransactions(data);
@@ -57,7 +58,7 @@ export default function TransactionsPage() {
 
   const fetchDirectors = async () => {
     try {
-      const response = await fetch('/api/directors', { credentials: 'include' });
+      const response = await apiRequest('/api/directors');
       if (response.ok) {
         const data = await response.json();
         setDirectors(data);
@@ -69,7 +70,7 @@ export default function TransactionsPage() {
 
   const fetchProjects = async () => {
     try {
-      const response = await fetch('/api/projects', { credentials: 'include' });
+      const response = await apiRequest('/api/projects');
       if (response.ok) {
         const data = await response.json();
         setProjects(data);
@@ -86,11 +87,9 @@ export default function TransactionsPage() {
       const url = editingTransaction ? `/api/transactions/${editingTransaction.id}` : '/api/transactions';
       const method = editingTransaction ? 'PUT' : 'POST';
 
-      const response = await fetch(url, {
+      const response = await apiRequest(url, {
         method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
-        credentials: 'include'
+        body: JSON.stringify(formData)
       });
 
       if (response.ok) {
@@ -112,9 +111,8 @@ export default function TransactionsPage() {
     if (!confirm('Are you sure you want to delete this transaction?')) return;
 
     try {
-      const response = await fetch(`/api/transactions/${id}`, {
-        method: 'DELETE',
-        credentials: 'include'
+      const response = await apiRequest(`/api/transactions/${id}`, {
+        method: 'DELETE'
       });
 
       if (response.ok) {

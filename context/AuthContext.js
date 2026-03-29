@@ -97,7 +97,26 @@ export function AuthProvider({ children }) {
     }
     
     const data = await response.json();
+    
+    // Check if registration requires approval
+    if (data.requiresApproval || data.status === 'pending') {
+      // Don't set user or tokens, just return the message
+      return {
+        ...data,
+        isPending: true
+      };
+    }
+    
+    // Store token in localStorage for approved users
+    if (data.access_token) {
+      localStorage.setItem('access_token', data.access_token);
+    }
+    
     setUser(data);
+    
+    // Verify authentication immediately
+    await checkAuth();
+    
     return data;
   };
 
