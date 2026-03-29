@@ -130,13 +130,60 @@ export async function GET(request) {
       return NextResponse.json(transaction);
     }
     
-    // Directors - List
+    // Directors - List (only approved)
     if (path === '/directors') {
       const user = await requireAuth(request);
       if (user instanceof NextResponse) return user;
       
-      const directors = await db.collection('directors').find({}).project({ password_hash: 0 }).toArray();
+      const directors = await db.collection('directors').find({ status: 'approved' }).project({ password_hash: 0 }).toArray();
       return NextResponse.json(directors);
+    }
+    
+    // Directors - Pending List
+    if (path === '/directors/pending') {
+      const user = await requireAuth(request);
+      if (user instanceof NextResponse) return user;
+      
+      const pendingDirectors = await db.collection('directors').find({ status: 'pending' }).project({ password_hash: 0 }).toArray();
+      return NextResponse.json(pendingDirectors);
+    }
+    
+    // Directors - Approve
+    if (path.startsWith('/directors/approve/')) {
+      const user = await requireAuth(request);
+      if (user instanceof NextResponse) return user;
+      
+      const id = path.split('/')[3];
+      
+      const result = await db.collection('directors').updateOne(
+        { id, status: 'pending' },
+        { $set: { status: 'approved', approved_at: new Date(), approved_by: user.sub } }
+      );
+      
+      if (result.matchedCount === 0) {
+        return NextResponse.json({ error: 'Pending director not found' }, { status: 404 });
+      }
+      
+      return NextResponse.json({ message: 'Director approved successfully' });
+    }
+    
+    // Directors - Reject
+    if (path.startsWith('/directors/reject/')) {
+      const user = await requireAuth(request);
+      if (user instanceof NextResponse) return user;
+      
+      const id = path.split('/')[3];
+      
+      const result = await db.collection('directors').updateOne(
+        { id, status: 'pending' },
+        { $set: { status: 'rejected', rejected_at: new Date(), rejected_by: user.sub } }
+      );
+      
+      if (result.matchedCount === 0) {
+        return NextResponse.json({ error: 'Pending director not found' }, { status: 404 });
+      }
+      
+      return NextResponse.json({ message: 'Director rejected' });
     }
     
     // Directors - Get by ID
@@ -220,7 +267,7 @@ export async function GET(request) {
       }
       
       const transactions = await db.collection('transactions').find(query).toArray();
-      const totalDirectors = await db.collection('directors').countDocuments();
+      const totalDirectors = await db.collection('directors').countDocuments({ status: 'approved' });
       
       const directorOwnIncome = transactions
         .filter(t => t.transaction_type === 'income' && t.account_type === 'director' && t.director_id === directorId)
@@ -293,23 +340,38 @@ export async function POST(request) {
       // Hash password
       const passwordHash = await hashPassword(password);
       
+      // Check if there are any approved directors
+      const approvedDirectorsCount = await db.collection('directors').countDocuments({ status: 'approved' });
+      
+      // First director is auto-approved, others need approval
+      const status = approvedDirectorsCount === 0 ? 'approved' : 'pending';
+      
       // Create director
       const director = {
         id: uuidv4(),
         name,
         email: email.toLowerCase(),
         password_hash: passwordHash,
+        status: status,
         created_at: new Date()
       };
       
       await db.collection('directors').insertOne(director);
       
-      // Create tokens
-      const accessToken = createAccessToken(director.id, director.email, director.name);
-      const refreshToken = createRefreshToken(director.id);
-      
       // Remove password hash from response
       const { password_hash, ...directorData } = director;
+      
+      if (status === 'pending') {
+        // Don't create tokens for pending directors
+        return NextResponse.json({
+          ...directorData,
+          message: 'Registration submitted! Your account is pending approval from existing directors.'
+        });
+      }
+      
+      // Create tokens for auto-approved first director
+      const accessToken = createAccessToken(director.id, director.email, director.name);
+      const refreshToken = createRefreshToken(director.id);
       
       let response = NextResponse.json({
         ...directorData,
@@ -334,6 +396,15 @@ export async function POST(request) {
       const director = await db.collection('directors').findOne({ email: email.toLowerCase() });
       if (!director) {
         return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
+      }
+      
+      // Check if director is approved
+      if (director.status === 'pending') {
+        return NextResponse.json({ error: 'Your account is pending approval from existing directors' }, { status: 403 });
+      }
+      
+      if (director.status === 'rejected') {
+        return NextResponse.json({ error: 'Your account registration was rejected' }, { status: 403 });
       }
       
       // Verify password
