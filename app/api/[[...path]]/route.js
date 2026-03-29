@@ -7,8 +7,11 @@ import { calculateCompanyIncome, calculateCompanyBalance, calculateDirectorIncom
 // Helper to set auth cookies
 function setAuthCookies(response, accessToken, refreshToken) {
   // Set access token cookie
-  const accessCookie = `access_token=${accessToken}; Path=/; HttpOnly; SameSite=Lax; Max-Age=900`;
-  const refreshCookie = `refresh_token=${refreshToken}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800`;
+  const isProduction = process.env.NODE_ENV === 'production' || process.env.NEXT_PUBLIC_BASE_URL?.includes('https');
+  const secureFlag = isProduction ? '; Secure' : '';
+  
+  const accessCookie = `access_token=${accessToken}; Path=/; HttpOnly; SameSite=Lax; Max-Age=900${secureFlag}`;
+  const refreshCookie = `refresh_token=${refreshToken}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800${secureFlag}`;
   
   response.headers.append('Set-Cookie', accessCookie);
   response.headers.append('Set-Cookie', refreshCookie);
@@ -18,8 +21,11 @@ function setAuthCookies(response, accessToken, refreshToken) {
 
 // Helper to clear auth cookies
 function clearAuthCookies(response) {
-  const accessCookie = `access_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`;
-  const refreshCookie = `refresh_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`;
+  const isProduction = process.env.NODE_ENV === 'production' || process.env.NEXT_PUBLIC_BASE_URL?.includes('https');
+  const secureFlag = isProduction ? '; Secure' : '';
+  
+  const accessCookie = `access_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secureFlag}`;
+  const refreshCookie = `refresh_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secureFlag}`;
   
   response.headers.append('Set-Cookie', accessCookie);
   response.headers.append('Set-Cookie', refreshCookie);
@@ -368,8 +374,11 @@ export async function POST(request) {
       // Create new access token
       const accessToken = createAccessToken(director.id, director.email, director.name);
       
+      const isProduction = process.env.NODE_ENV === 'production' || process.env.NEXT_PUBLIC_BASE_URL?.includes('https');
+      const secureFlag = isProduction ? '; Secure' : '';
+      
       let response = NextResponse.json({ message: 'Token refreshed' });
-      const accessCookie = `access_token=${accessToken}; Path=/; HttpOnly; SameSite=Lax; Max-Age=900`;
+      const accessCookie = `access_token=${accessToken}; Path=/; HttpOnly; SameSite=Lax; Max-Age=900${secureFlag}`;
       response.headers.append('Set-Cookie', accessCookie);
       
       return response;
