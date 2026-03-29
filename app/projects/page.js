@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { Plus, Pencil, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { apiRequest } from '@/lib/api';
 
 export default function ProjectsPage() {
   const [projects, setProjects] = useState([]);
@@ -33,7 +34,7 @@ export default function ProjectsPage() {
 
   const fetchProjects = async () => {
     try {
-      const response = await fetch('/api/projects', { credentials: 'include' });
+      const response = await apiRequest('/api/projects');
       if (response.ok) {
         const data = await response.json();
         setProjects(data);
@@ -53,11 +54,9 @@ export default function ProjectsPage() {
       const url = editingProject ? `/api/projects/${editingProject.id}` : '/api/projects';
       const method = editingProject ? 'PUT' : 'POST';
 
-      const response = await fetch(url, {
+      const response = await apiRequest(url, {
         method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
-        credentials: 'include'
+        body: JSON.stringify(formData)
       });
 
       if (response.ok) {
@@ -79,9 +78,8 @@ export default function ProjectsPage() {
     if (!confirm('Are you sure you want to delete this project?')) return;
 
     try {
-      const response = await fetch(`/api/projects/${id}`, {
-        method: 'DELETE',
-        credentials: 'include'
+      const response = await apiRequest(`/api/projects/${id}`, {
+        method: 'DELETE'
       });
 
       if (response.ok) {

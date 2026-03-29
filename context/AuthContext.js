@@ -5,6 +5,18 @@ import { useRouter } from 'next/navigation';
 
 const AuthContext = createContext(null);
 
+// Helper to get auth headers
+export function getAuthHeaders() {
+  const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null;
+  const headers = {
+    'Content-Type': 'application/json'
+  };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -16,8 +28,15 @@ export function AuthProvider({ children }) {
 
   const checkAuth = async () => {
     try {
+      const token = localStorage.getItem('access_token');
+      const headers = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
       const response = await fetch('/api/auth/me', {
-        credentials: 'include'
+        credentials: 'include',
+        headers
       });
       
       if (response.ok) {
@@ -25,10 +44,12 @@ export function AuthProvider({ children }) {
         setUser(data);
       } else {
         setUser(false);
+        localStorage.removeItem('access_token');
       }
     } catch (error) {
       console.error('Auth check failed:', error);
       setUser(false);
+      localStorage.removeItem('access_token');
     } finally {
       setLoading(false);
     }
@@ -48,7 +69,17 @@ export function AuthProvider({ children }) {
     }
     
     const data = await response.json();
+    
+    // Store token in localStorage as backup
+    if (data.access_token) {
+      localStorage.setItem('access_token', data.access_token);
+    }
+    
     setUser(data);
+    
+    // Verify authentication immediately
+    await checkAuth();
+    
     return data;
   };
 
@@ -75,6 +106,7 @@ export function AuthProvider({ children }) {
       method: 'POST',
       credentials: 'include'
     });
+    localStorage.removeItem('access_token');
     setUser(false);
     router.push('/login');
   };

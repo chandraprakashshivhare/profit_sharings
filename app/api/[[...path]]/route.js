@@ -311,7 +311,11 @@ export async function POST(request) {
       // Remove password hash from response
       const { password_hash, ...directorData } = director;
       
-      let response = NextResponse.json(directorData);
+      let response = NextResponse.json({
+        ...directorData,
+        access_token: accessToken,
+        refresh_token: refreshToken
+      });
       response = setAuthCookies(response, accessToken, refreshToken);
       
       return response;
@@ -345,7 +349,11 @@ export async function POST(request) {
       // Remove password hash from response
       const { password_hash, ...directorData } = director;
       
-      let response = NextResponse.json(directorData);
+      let response = NextResponse.json({
+        ...directorData,
+        access_token: accessToken,
+        refresh_token: refreshToken
+      });
       response = setAuthCookies(response, accessToken, refreshToken);
       
       return response;
