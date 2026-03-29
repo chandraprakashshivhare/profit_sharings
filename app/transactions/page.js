@@ -364,14 +364,14 @@ export default function TransactionsPage() {
                       <div className="space-y-2">
                         <Label htmlFor="project_id">Project (Optional)</Label>
                         <Select 
-                          value={formData.project_id} 
-                          onValueChange={(value) => setFormData({ ...formData, project_id: value })}
+                          value={formData.project_id || 'none'} 
+                          onValueChange={(value) => setFormData({ ...formData, project_id: value === 'none' ? '' : value })}
                         >
                           <SelectTrigger>
                             <SelectValue placeholder="Select project" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="">None</SelectItem>
+                            <SelectItem value="none">None</SelectItem>
                             {projects.map(project => (
                               <SelectItem key={project.id} value={project.id}>
                                 {project.name}
