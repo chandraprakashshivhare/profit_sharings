@@ -148,44 +148,6 @@ export async function GET(request) {
       return NextResponse.json(pendingDirectors);
     }
     
-    // Directors - Approve
-    if (path.startsWith('/directors/approve/')) {
-      const user = await requireAuth(request);
-      if (user instanceof NextResponse) return user;
-      
-      const id = path.split('/')[3];
-      
-      const result = await db.collection('directors').updateOne(
-        { id, status: 'pending' },
-        { $set: { status: 'approved', approved_at: new Date(), approved_by: user.sub } }
-      );
-      
-      if (result.matchedCount === 0) {
-        return NextResponse.json({ error: 'Pending director not found' }, { status: 404 });
-      }
-      
-      return NextResponse.json({ message: 'Director approved successfully' });
-    }
-    
-    // Directors - Reject
-    if (path.startsWith('/directors/reject/')) {
-      const user = await requireAuth(request);
-      if (user instanceof NextResponse) return user;
-      
-      const id = path.split('/')[3];
-      
-      const result = await db.collection('directors').updateOne(
-        { id, status: 'pending' },
-        { $set: { status: 'rejected', rejected_at: new Date(), rejected_by: user.sub } }
-      );
-      
-      if (result.matchedCount === 0) {
-        return NextResponse.json({ error: 'Pending director not found' }, { status: 404 });
-      }
-      
-      return NextResponse.json({ message: 'Director rejected' });
-    }
-    
     // Directors - Get by ID
     if (path.startsWith('/directors/')) {
       const user = await requireAuth(request);
@@ -574,6 +536,44 @@ export async function POST(request) {
       // Remove password hash from response
       const { password_hash, ...directorData } = director;
       return NextResponse.json(directorData);
+    }
+    
+    // Directors - Approve
+    if (path.startsWith('/directors/approve/')) {
+      const user = await requireAuth(request);
+      if (user instanceof NextResponse) return user;
+      
+      const id = path.split('/')[3];
+      
+      const result = await db.collection('directors').updateOne(
+        { id, status: 'pending' },
+        { $set: { status: 'approved', approved_at: new Date(), approved_by: user.sub } }
+      );
+      
+      if (result.matchedCount === 0) {
+        return NextResponse.json({ error: 'Pending director not found' }, { status: 404 });
+      }
+      
+      return NextResponse.json({ message: 'Director approved successfully' });
+    }
+    
+    // Directors - Reject
+    if (path.startsWith('/directors/reject/')) {
+      const user = await requireAuth(request);
+      if (user instanceof NextResponse) return user;
+      
+      const id = path.split('/')[3];
+      
+      const result = await db.collection('directors').updateOne(
+        { id, status: 'pending' },
+        { $set: { status: 'rejected', rejected_at: new Date(), rejected_by: user.sub } }
+      );
+      
+      if (result.matchedCount === 0) {
+        return NextResponse.json({ error: 'Pending director not found' }, { status: 404 });
+      }
+      
+      return NextResponse.json({ message: 'Director rejected' });
     }
     
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
