@@ -4,11 +4,13 @@ import { hashPassword, verifyPassword, createAccessToken, createRefreshToken, ge
 import { v4 as uuidv4 } from 'uuid';
 import { companyDashboardExportCsv, directorDashboardExportCsv, transactionsListExportCsv } from '@/lib/csv';
 import {
+  buildAuditListQuery,
   buildTransactionsListQuery,
   formatDashboardPeriodLabel,
   getCompanyDashboardData,
   getDirectorDashboardData
 } from '@/lib/dashboardData';
+import { insertTransactionAudit } from '@/lib/transactionAudit';
 
 // Helper to set auth cookies
 function setAuthCookies(response, accessToken, refreshToken) {
@@ -173,7 +175,26 @@ export async function GET(request) {
       
       return NextResponse.json(transaction);
     }
-    
+
+    // Transaction audit log (when actions were recorded — same period filter as transactions)
+    if (path === '/transaction-audit') {
+      const user = await requireAuth(request);
+      if (user instanceof NextResponse) return user;
+
+      const { searchParams } = new URL(request.url);
+      const period = searchParams.get('period') || 'all';
+      const month = searchParams.get('month');
+      const year = searchParams.get('year');
+
+      const query = buildAuditListQuery({ period, month, year });
+      const entries = await db
+        .collection('transaction_audit')
+        .find(query)
+        .sort({ recorded_at: -1 })
+        .toArray();
+      return NextResponse.json(entries);
+    }
+
     // Directors - List (only approved)
     if (path === '/directors') {
       const user = await requireAuth(request);
@@ -520,9 +541,14 @@ export async function POST(request) {
       };
       
       await db.collection('transactions').insertOne(transaction);
+      await insertTransactionAudit(db, {
+        action: 'create',
+        actorId: user.sub,
+        transaction
+      });
       return NextResponse.json(transaction);
     }
-    
+
     // Directors - Create
     if (path === '/directors') {
       const user = await requireAuth(request);
@@ -647,7 +673,16 @@ export async function PUT(request) {
     if (path.startsWith('/transactions/')) {
       const id = path.split('/')[2];
       const body = await request.json();
-      
+      const existing = await db.collection('transactions').findOne({ id });
+      if (!existing) {
+        return NextResponse.json({ error: 'Transaction not found' }, { status: 404 });
+      }
+
+      const previous = {
+        amount: existing.amount,
+        transaction_type: existing.transaction_type
+      };
+
       const updateData = {};
       if (body.transaction_type !== undefined) updateData.transaction_type = body.transaction_type;
       if (body.amount !== undefined) updateData.amount = parseFloat(body.amount);
@@ -659,17 +694,17 @@ export async function PUT(request) {
       if (body.description !== undefined) updateData.description = body.description;
       if (body.transaction_date !== undefined) updateData.transaction_date = new Date(body.transaction_date);
       updateData.updated_at = new Date();
-      
-      const result = await db.collection('transactions').updateOne(
-        { id },
-        { $set: updateData }
-      );
-      
-      if (result.matchedCount === 0) {
-        return NextResponse.json({ error: 'Transaction not found' }, { status: 404 });
-      }
-      
+      updateData.updated_by = user.sub;
+
+      await db.collection('transactions').updateOne({ id }, { $set: updateData });
+
       const transaction = await db.collection('transactions').findOne({ id });
+      await insertTransactionAudit(db, {
+        action: 'update',
+        actorId: user.sub,
+        transaction,
+        previous
+      });
       return NextResponse.json(transaction);
     }
     
@@ -738,12 +773,17 @@ export async function DELETE(request) {
     // Transactions - Delete
     if (path.startsWith('/transactions/')) {
       const id = path.split('/')[2];
-      const result = await db.collection('transactions').deleteOne({ id });
-      
-      if (result.deletedCount === 0) {
+      const existing = await db.collection('transactions').findOne({ id });
+      if (!existing) {
         return NextResponse.json({ error: 'Transaction not found' }, { status: 404 });
       }
-      
+
+      await insertTransactionAudit(db, {
+        action: 'delete',
+        actorId: user.sub,
+        transaction: existing
+      });
+      await db.collection('transactions').deleteOne({ id });
       return NextResponse.json({ message: 'Transaction deleted' });
     }
     

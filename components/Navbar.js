@@ -3,7 +3,7 @@
 import { useAuth } from '@/context/AuthContext';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, FolderKanban, Receipt, Users, LogOut } from 'lucide-react';
+import { LayoutDashboard, FolderKanban, Receipt, ClipboardList, Users, LogOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 export default function Navbar() {
@@ -16,6 +16,7 @@ export default function Navbar() {
     { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { href: '/projects', label: 'Projects', icon: FolderKanban },
     { href: '/transactions', label: 'Transactions', icon: Receipt },
+    { href: '/audit', label: 'Audit', icon: ClipboardList },
     { href: '/directors', label: 'Directors', icon: Users },
   ];
 
