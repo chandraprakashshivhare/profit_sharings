@@ -8,6 +8,15 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle
+} from '@/components/ui/alert-dialog';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
@@ -27,6 +36,8 @@ export default function TransactionsPage() {
   const [month, setMonth] = useState(new Date().getMonth().toString());
   const [year, setYear] = useState(new Date().getFullYear().toString());
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteInProgress, setDeleteInProgress] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState(null);
   const [formData, setFormData] = useState({
     transaction_type: 'income',
@@ -164,16 +175,17 @@ export default function TransactionsPage() {
     }
   };
 
-  const handleDelete = async (id) => {
-    if (!confirm('Are you sure you want to delete this transaction?')) return;
-
+  const confirmDeleteTransaction = async () => {
+    if (!deleteTarget || deleteInProgress) return;
+    setDeleteInProgress(true);
     try {
-      const response = await apiRequest(`/api/transactions/${id}`, {
+      const response = await apiRequest(`/api/transactions/${deleteTarget.id}`, {
         method: 'DELETE'
       });
 
       if (response.ok) {
         toast.success('Transaction deleted!');
+        setDeleteTarget(null);
         fetchTransactions();
       } else {
         toast.error('Failed to delete transaction');
@@ -181,6 +193,8 @@ export default function TransactionsPage() {
     } catch (error) {
       console.error('Failed to delete transaction:', error);
       toast.error('Failed to delete transaction');
+    } finally {
+      setDeleteInProgress(false);
     }
   };
 
@@ -634,7 +648,7 @@ export default function TransactionsPage() {
                                 size="sm"
                                 variant="ghost"
                                 className="text-red-600 hover:text-red-700"
-                                onClick={() => handleDelete(transaction.id)}
+                                onClick={() => setDeleteTarget(transaction)}
                               >
                                 <Trash2 className="w-3 h-3" />
                               </Button>
@@ -650,6 +664,60 @@ export default function TransactionsPage() {
           )}
         </div>
       </div>
+
+      <AlertDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => {
+          if (!open && !deleteInProgress) setDeleteTarget(null);
+        }}
+      >
+        <AlertDialogContent className="sm:max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete transaction?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will remove the transaction from the books and add a delete entry to the audit log. This
+              cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {deleteTarget ? (
+            <div className="rounded-lg border border-border bg-muted/40 px-4 py-3 space-y-2 text-sm">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">Type</span>
+                <Badge variant="outline" className="font-normal capitalize">
+                  {deleteTarget.transaction_type}
+                </Badge>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">Amount</span>
+                <span className="font-semibold tabular-nums text-foreground">
+                  {formatCurrency(deleteTarget.amount)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">Date</span>
+                <span className="text-foreground">{formatDate(deleteTarget.transaction_date)}</span>
+              </div>
+              {deleteTarget.description ? (
+                <div className="pt-2 border-t border-border">
+                  <span className="text-muted-foreground text-xs block mb-1">Description</span>
+                  <p className="text-foreground line-clamp-2">{deleteTarget.description}</p>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+          <AlertDialogFooter className="gap-2 sm:gap-0">
+            <AlertDialogCancel disabled={deleteInProgress}>Cancel</AlertDialogCancel>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={deleteInProgress}
+              onClick={confirmDeleteTransaction}
+            >
+              {deleteInProgress ? 'Deleting…' : 'Delete transaction'}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </ProtectedRoute>
   );
 }
