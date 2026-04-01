@@ -2,7 +2,12 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { hashPassword, verifyPassword, createAccessToken, createRefreshToken, getUserFromRequest, verifyToken } from '@/lib/auth';
 import { v4 as uuidv4 } from 'uuid';
-import { companyDashboardExportCsv, directorDashboardExportCsv, transactionsListExportCsv } from '@/lib/csv';
+import {
+  companyDashboardExportCsv,
+  directorDashboardExportCsv,
+  transactionAuditExportCsv,
+  transactionsListExportCsv
+} from '@/lib/csv';
 import {
   buildAuditListQuery,
   buildTransactionsListQuery,
@@ -174,6 +179,42 @@ export async function GET(request) {
       }
       
       return NextResponse.json(transaction);
+    }
+
+    // Transaction audit — CSV (must be before JSON list path)
+    if (path === '/transaction-audit/csv') {
+      const user = await requireAuth(request);
+      if (user instanceof NextResponse) return user;
+
+      const { searchParams } = new URL(request.url);
+      const period = searchParams.get('period') || 'all';
+      const month = searchParams.get('month');
+      const year = searchParams.get('year');
+
+      const query = buildAuditListQuery({ period, month, year });
+      const entries = await db
+        .collection('transaction_audit')
+        .find(query)
+        .sort({ recorded_at: -1 })
+        .toArray();
+
+      const directors = await db.collection('directors').find({}).project({ id: 1, name: 1 }).toArray();
+      const directorNameById = Object.fromEntries(directors.map((d) => [d.id, d.name]));
+
+      const projects = await db.collection('projects').find({}).project({ id: 1, name: 1 }).toArray();
+      const projectNameById = Object.fromEntries(projects.map((p) => [p.id, p.name]));
+
+      const csv = transactionAuditExportCsv(entries, directorNameById, projectNameById);
+      const periodLabel = formatDashboardPeriodLabel(period, month, year);
+      const safe = periodLabel.replace(/[^\w\-]+/g, '_').slice(0, 40) || 'all';
+
+      return new NextResponse(csv, {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/csv; charset=utf-8',
+          'Content-Disposition': `attachment; filename="transaction-audit_${safe}.csv"`
+        }
+      });
     }
 
     // Transaction audit log (when actions were recorded — same period filter as transactions)

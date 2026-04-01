@@ -7,9 +7,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { ArrowUpCircle, ArrowDownCircle, Repeat, ArrowRightLeft } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { ArrowUpCircle, ArrowDownCircle, Repeat, ArrowRightLeft, Download } from 'lucide-react';
 import { toast } from 'sonner';
-import { apiRequest } from '@/lib/api';
+import { apiDownload, apiRequest } from '@/lib/api';
 import { formatDashboardPeriodLabel } from '@/lib/dashboardData';
 
 export default function AuditPage() {
@@ -17,6 +18,7 @@ export default function AuditPage() {
   const [directors, setDirectors] = useState([]);
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
   const [period, setPeriod] = useState('all');
   const [month, setMonth] = useState(new Date().getMonth().toString());
   const [year, setYear] = useState(new Date().getFullYear().toString());
@@ -74,6 +76,34 @@ export default function AuditPage() {
       toast.error('Failed to load audit log');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleExportCsv = async () => {
+    setExporting(true);
+    try {
+      const res = await apiDownload(`/api/transaction-audit/csv?${auditQueryString()}`);
+      if (!res.ok) {
+        toast.error('Export failed');
+        return;
+      }
+      const blob = await res.blob();
+      const cd = res.headers.get('Content-Disposition');
+      let filename = 'transaction-audit.csv';
+      const match = cd?.match(/filename="([^"]+)"/);
+      if (match) filename = match[1];
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success('CSV downloaded');
+    } catch (e) {
+      console.error(e);
+      toast.error('Export failed');
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -213,6 +243,17 @@ export default function AuditPage() {
                   </Select>
                 </>
               )}
+
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={loading || exporting}
+                onClick={handleExportCsv}
+              >
+                <Download className="h-4 w-4 mr-2" />
+                {exporting ? 'Exporting…' : 'Export CSV'}
+              </Button>
             </div>
           </div>
 
