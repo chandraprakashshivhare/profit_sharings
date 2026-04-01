@@ -2,8 +2,9 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { hashPassword, verifyPassword, createAccessToken, createRefreshToken, getUserFromRequest, verifyToken } from '@/lib/auth';
 import { v4 as uuidv4 } from 'uuid';
-import { companyDashboardExportCsv, directorDashboardExportCsv } from '@/lib/csv';
+import { companyDashboardExportCsv, directorDashboardExportCsv, transactionsListExportCsv } from '@/lib/csv';
 import {
+  buildTransactionsListQuery,
   formatDashboardPeriodLabel,
   getCompanyDashboardData,
   getDirectorDashboardData
@@ -103,23 +104,61 @@ export async function GET(request) {
       return NextResponse.json(project);
     }
     
+    // Transactions - CSV export (must be before /transactions/:id)
+    if (path === '/transactions/csv') {
+      const user = await requireAuth(request);
+      if (user instanceof NextResponse) return user;
+
+      const { searchParams } = new URL(request.url);
+      const period = searchParams.get('period') || 'all';
+      const month = searchParams.get('month');
+      const year = searchParams.get('year');
+      const type = searchParams.get('type');
+      const directorId = searchParams.get('director_id');
+
+      const query = buildTransactionsListQuery({ period, month, year, type, directorId });
+      const transactions = await db.collection('transactions').find(query).sort({ transaction_date: -1 }).toArray();
+
+      const directors = await db
+        .collection('directors')
+        .find({ status: 'approved' })
+        .project({ id: 1, name: 1 })
+        .toArray();
+      const directorNameById = Object.fromEntries(directors.map((d) => [d.id, d.name]));
+
+      const projects = await db.collection('projects').find({}).project({ id: 1, name: 1 }).toArray();
+      const projectNameById = Object.fromEntries(projects.map((p) => [p.id, p.name]));
+
+      const csv = transactionsListExportCsv(transactions, directorNameById, projectNameById);
+      const periodLabel = formatDashboardPeriodLabel(period, month, year);
+      const safe = periodLabel.replace(/[^\w\-]+/g, '_').slice(0, 40) || 'all';
+
+      return new NextResponse(csv, {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/csv; charset=utf-8',
+          'Content-Disposition': `attachment; filename="transactions_${safe}.csv"`
+        }
+      });
+    }
+
     // Transactions - List
     if (path === '/transactions') {
       const user = await requireAuth(request);
       if (user instanceof NextResponse) return user;
-      
+
       const { searchParams } = new URL(request.url);
+      const period = searchParams.get('period') || 'all';
+      const month = searchParams.get('month');
+      const year = searchParams.get('year');
       const type = searchParams.get('type');
       const directorId = searchParams.get('director_id');
-      
-      const query = {};
-      if (type) query.transaction_type = type;
-      if (directorId) query.director_id = directorId;
-      
+
+      const query = buildTransactionsListQuery({ period, month, year, type, directorId });
       const transactions = await db.collection('transactions').find(query).sort({ transaction_date: -1 }).toArray();
       return NextResponse.json(transactions);
     }
-    
+
     // Transactions - Get by ID
     if (path.startsWith('/transactions/')) {
       const user = await requireAuth(request);

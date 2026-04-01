@@ -12,15 +12,20 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus, Pencil, Trash2, ArrowUpCircle, ArrowDownCircle, Repeat, ArrowRightLeft } from 'lucide-react';
+import { Plus, Pencil, Trash2, ArrowUpCircle, ArrowDownCircle, Repeat, ArrowRightLeft, Download } from 'lucide-react';
 import { toast } from 'sonner';
-import { apiRequest } from '@/lib/api';
+import { apiDownload, apiRequest } from '@/lib/api';
+import { formatDashboardPeriodLabel } from '@/lib/dashboardData';
 
 export default function TransactionsPage() {
   const [transactions, setTransactions] = useState([]);
   const [directors, setDirectors] = useState([]);
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
+  const [period, setPeriod] = useState('all');
+  const [month, setMonth] = useState(new Date().getMonth().toString());
+  const [year, setYear] = useState(new Date().getFullYear().toString());
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState(null);
   const [formData, setFormData] = useState({
@@ -35,24 +40,76 @@ export default function TransactionsPage() {
     transaction_date: new Date().toISOString().split('T')[0]
   });
 
+  const transactionsQueryString = () => {
+    let qs = `period=${period}`;
+    if (period === 'month') {
+      qs += `&month=${month}&year=${year}`;
+    } else if (period === 'year') {
+      qs += `&year=${year}`;
+    }
+    return qs;
+  };
+
+  const currentYear = new Date().getFullYear();
+  const years = Array.from({ length: 5 }, (_, i) => currentYear - i);
+  const months = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+  const periodLabel = formatDashboardPeriodLabel(period, month, year);
+
   useEffect(() => {
-    fetchTransactions();
     fetchDirectors();
     fetchProjects();
   }, []);
 
+  useEffect(() => {
+    fetchTransactions();
+  }, [period, month, year]);
+
   const fetchTransactions = async () => {
+    setLoading(true);
     try {
-      const response = await apiRequest('/api/transactions');
+      const response = await apiRequest(`/api/transactions?${transactionsQueryString()}`);
       if (response.ok) {
         const data = await response.json();
         setTransactions(data);
+      } else {
+        toast.error('Failed to load transactions');
       }
     } catch (error) {
       console.error('Failed to fetch transactions:', error);
       toast.error('Failed to load transactions');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleExportCsv = async () => {
+    setExporting(true);
+    try {
+      const res = await apiDownload(`/api/transactions/csv?${transactionsQueryString()}`);
+      if (!res.ok) {
+        toast.error('Export failed');
+        return;
+      }
+      const blob = await res.blob();
+      const cd = res.headers.get('Content-Disposition');
+      let filename = 'transactions.csv';
+      const match = cd?.match(/filename="([^"]+)"/);
+      if (match) filename = match[1];
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success('CSV downloaded');
+    } catch (e) {
+      console.error('Export error:', e);
+      toast.error('Export failed');
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -205,12 +262,82 @@ export default function TransactionsPage() {
       <div className="min-h-screen bg-background">
         <Navbar />
         <div className="container mx-auto px-4 py-8">
-          <div className="flex items-center justify-between mb-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-6">
             <div>
               <h1 className="text-3xl font-bold">Transactions</h1>
               <p className="text-muted-foreground mt-1">Track income, expenses, loans, and transfers</p>
+              <p className="text-sm text-muted-foreground mt-2">
+                Showing: <span className="font-medium text-foreground">{periodLabel}</span>
+              </p>
             </div>
-            <Dialog open={dialogOpen} onOpenChange={(open) => {
+            <div className="flex flex-wrap items-center gap-2">
+              <Select value={period} onValueChange={setPeriod}>
+                <SelectTrigger className="w-[140px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Time</SelectItem>
+                  <SelectItem value="year">Financial Year</SelectItem>
+                  <SelectItem value="month">Month</SelectItem>
+                </SelectContent>
+              </Select>
+
+              {period === 'year' && (
+                <Select value={year} onValueChange={setYear}>
+                  <SelectTrigger className="w-[120px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {years.map((y) => (
+                      <SelectItem key={y} value={y.toString()}>
+                        FY {y}-{(y + 1).toString().slice(2)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+
+              {period === 'month' && (
+                <>
+                  <Select value={month} onValueChange={setMonth}>
+                    <SelectTrigger className="w-[140px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {months.map((m, idx) => (
+                        <SelectItem key={idx} value={idx.toString()}>
+                          {m}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select value={year} onValueChange={setYear}>
+                    <SelectTrigger className="w-[100px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {years.map((y) => (
+                        <SelectItem key={y} value={y.toString()}>
+                          {y}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </>
+              )}
+
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={loading || exporting}
+                onClick={handleExportCsv}
+              >
+                <Download className="h-4 w-4 mr-2" />
+                {exporting ? 'Exporting…' : 'Export CSV'}
+              </Button>
+
+              <Dialog open={dialogOpen} onOpenChange={(open) => {
               setDialogOpen(open);
               if (!open) resetForm();
             }}>
@@ -413,6 +540,7 @@ export default function TransactionsPage() {
                 </form>
               </DialogContent>
             </Dialog>
+            </div>
           </div>
 
           {loading ? (
@@ -422,13 +550,17 @@ export default function TransactionsPage() {
           ) : transactions.length === 0 ? (
             <Card>
               <CardContent className="text-center py-12">
-                <p className="text-muted-foreground">No transactions yet. Create your first transaction!</p>
+                <p className="text-muted-foreground">
+                  {period === 'all'
+                    ? 'No transactions yet. Create your first transaction!'
+                    : `No transactions for ${periodLabel}. Try a different period or add a transaction.`}
+                </p>
               </CardContent>
             </Card>
           ) : (
             <Card>
               <CardHeader>
-                <CardTitle>All Transactions</CardTitle>
+                <CardTitle>Transactions — {periodLabel}</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="overflow-x-auto">
