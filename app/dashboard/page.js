@@ -7,9 +7,10 @@ import { useAuth } from '@/context/AuthContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ArrowUpCircle, ArrowDownCircle, TrendingUp, Wallet } from 'lucide-react';
+import { ArrowUpCircle, ArrowDownCircle, TrendingUp, Wallet, Download } from 'lucide-react';
 import { toast } from 'sonner';
-import { apiRequest } from '@/lib/api';
+import { apiDownload, apiRequest } from '@/lib/api';
+import { Button } from '@/components/ui/button';
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -19,6 +20,17 @@ export default function DashboardPage() {
   const [companyData, setCompanyData] = useState(null);
   const [directorData, setDirectorData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(null);
+
+  const dashboardQueryString = () => {
+    let qs = `period=${period}`;
+    if (period === 'month') {
+      qs += `&month=${month}&year=${year}`;
+    } else if (period === 'year') {
+      qs += `&year=${year}`;
+    }
+    return qs;
+  };
 
   useEffect(() => {
     if (user) {
@@ -29,16 +41,9 @@ export default function DashboardPage() {
   const fetchDashboardData = async () => {
     setLoading(true);
     try {
-      let companyUrl = `/api/dashboard/company?period=${period}`;
-      let directorUrl = `/api/dashboard/director?period=${period}`;
-
-      if (period === 'month') {
-        companyUrl += `&month=${month}&year=${year}`;
-        directorUrl += `&month=${month}&year=${year}`;
-      } else if (period === 'year') {
-        companyUrl += `&year=${year}`;
-        directorUrl += `&year=${year}`;
-      }
+      const q = dashboardQueryString();
+      const companyUrl = `/api/dashboard/company?${q}`;
+      const directorUrl = `/api/dashboard/director?${q}`;
 
       const [companyRes, directorRes] = await Promise.all([
         apiRequest(companyUrl),
@@ -56,6 +61,36 @@ export default function DashboardPage() {
       toast.error('Failed to load dashboard');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleExportCsv = async (kind) => {
+    const q = dashboardQueryString();
+    const path = kind === 'company' ? '/api/dashboard/company/csv' : '/api/dashboard/director/csv';
+    setExporting(kind);
+    try {
+      const res = await apiDownload(`${path}?${q}`);
+      if (!res.ok) {
+        toast.error('Export failed');
+        return;
+      }
+      const blob = await res.blob();
+      const cd = res.headers.get('Content-Disposition');
+      let filename = kind === 'company' ? 'company-dashboard.csv' : 'my-dashboard.csv';
+      const match = cd?.match(/filename="([^"]+)"/);
+      if (match) filename = match[1];
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success('CSV downloaded');
+    } catch (e) {
+      console.error('Export error:', e);
+      toast.error('Export failed');
+    } finally {
+      setExporting(null);
     }
   };
 
@@ -149,6 +184,18 @@ export default function DashboardPage() {
             </TabsList>
 
             <TabsContent value="company" className="space-y-4">
+              <div className="flex justify-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={loading || !companyData || exporting === 'company'}
+                  onClick={() => handleExportCsv('company')}
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  {exporting === 'company' ? 'Exporting…' : 'Export CSV'}
+                </Button>
+              </div>
               {loading ? (
                 <div className="text-center py-12">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
@@ -219,6 +266,18 @@ export default function DashboardPage() {
             </TabsContent>
 
             <TabsContent value="director" className="space-y-4">
+              <div className="flex justify-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={loading || !directorData || exporting === 'director'}
+                  onClick={() => handleExportCsv('director')}
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  {exporting === 'director' ? 'Exporting…' : 'Export CSV'}
+                </Button>
+              </div>
               {loading ? (
                 <div className="text-center py-12">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>

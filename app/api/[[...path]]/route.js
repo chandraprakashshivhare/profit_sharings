@@ -2,7 +2,12 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { hashPassword, verifyPassword, createAccessToken, createRefreshToken, getUserFromRequest, verifyToken } from '@/lib/auth';
 import { v4 as uuidv4 } from 'uuid';
-import { calculateCompanyIncome, calculateCompanyBalance, calculateDirectorIncome, calculateDirectorBalance, getCurrentFinancialYear, getFinancialYearDates, getMonthDateRange } from '@/lib/financial';
+import { companyDashboardExportCsv, directorDashboardExportCsv } from '@/lib/csv';
+import {
+  formatDashboardPeriodLabel,
+  getCompanyDashboardData,
+  getDirectorDashboardData
+} from '@/lib/dashboardData';
 
 // Helper to set auth cookies
 function setAuthCookies(response, accessToken, refreshToken) {
@@ -163,109 +168,88 @@ export async function GET(request) {
       return NextResponse.json(director);
     }
     
-    // Dashboard - Company
+    // Dashboard - Company (JSON)
     if (path === '/dashboard/company') {
       const user = await requireAuth(request);
       if (user instanceof NextResponse) return user;
-      
+
       const { searchParams } = new URL(request.url);
-      const period = searchParams.get('period') || 'all'; // month, year, all
-      const month = searchParams.get('month'); // 0-11
+      const period = searchParams.get('period') || 'all';
+      const month = searchParams.get('month');
       const year = searchParams.get('year');
-      
-      let query = {};
-      
-      if (period === 'month' && month && year) {
-        const { startDate, endDate } = getMonthDateRange(parseInt(year), parseInt(month));
-        query.transaction_date = { $gte: startDate, $lte: endDate };
-      } else if (period === 'year' && year) {
-        const { startDate, endDate } = getFinancialYearDates(parseInt(year));
-        query.transaction_date = { $gte: startDate, $lte: endDate };
-      }
-      
-      const transactions = await db.collection('transactions').find(query).toArray();
-      
-      const totalIncome = transactions
-        .filter(t => t.transaction_type === 'income')
-        .reduce((sum, t) => sum + t.amount, 0);
-      
-      const totalExpenses = transactions
-        .filter(t => t.transaction_type === 'expense')
-        .reduce((sum, t) => sum + t.amount, 0);
-      
-      const companyIncome = calculateCompanyIncome(transactions);
-      const companyBalance = calculateCompanyBalance(transactions);
-      
-      return NextResponse.json({
-        totalIncome,
-        totalExpenses,
-        companyIncome,
-        companyBalance,
-        period,
-        month,
-        year
+
+      const data = await getCompanyDashboardData(db, period, month, year);
+      const { transactions: _tx, ...summary } = data;
+      return NextResponse.json(summary);
+    }
+
+    // Dashboard - Company (CSV export)
+    if (path === '/dashboard/company/csv') {
+      const user = await requireAuth(request);
+      if (user instanceof NextResponse) return user;
+
+      const { searchParams } = new URL(request.url);
+      const period = searchParams.get('period') || 'all';
+      const month = searchParams.get('month');
+      const year = searchParams.get('year');
+
+      const data = await getCompanyDashboardData(db, period, month, year);
+      const periodLabel = formatDashboardPeriodLabel(period, month, year);
+      const csv = companyDashboardExportCsv(data);
+      const safe = periodLabel.replace(/[^\w\-]+/g, '_').slice(0, 40) || 'all';
+      return new NextResponse(csv, {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/csv; charset=utf-8',
+          'Content-Disposition': `attachment; filename="company-dashboard_${safe}.csv"`
+        }
       });
     }
-    
-    // Dashboard - Director
+
+    // Dashboard - Director (JSON)
     if (path === '/dashboard/director') {
       const user = await requireAuth(request);
       if (user instanceof NextResponse) return user;
-      
+
       const { searchParams } = new URL(request.url);
       const directorId = searchParams.get('director_id') || user.sub;
       const period = searchParams.get('period') || 'all';
       const month = searchParams.get('month');
       const year = searchParams.get('year');
-      
-      let query = {};
-      
-      if (period === 'month' && month && year) {
-        const { startDate, endDate } = getMonthDateRange(parseInt(year), parseInt(month));
-        query.transaction_date = { $gte: startDate, $lte: endDate };
-      } else if (period === 'year' && year) {
-        const { startDate, endDate } = getFinancialYearDates(parseInt(year));
-        query.transaction_date = { $gte: startDate, $lte: endDate };
-      }
-      
-      const transactions = await db.collection('transactions').find(query).toArray();
-      const totalDirectors = await db.collection('directors').countDocuments({ status: 'approved' });
-      
-      const directorOwnIncome = transactions
-        .filter(t => t.transaction_type === 'income' && t.account_type === 'director' && t.director_id === directorId)
-        .reduce((sum, t) => sum + t.amount, 0);
-      
-      const directorExpenses = transactions
-        .filter(t => t.transaction_type === 'expense' && t.account_type === 'director' && t.director_id === directorId)
-        .reduce((sum, t) => sum + t.amount, 0);
-      
-      const loansGiven = transactions
-        .filter(t => t.transaction_type === 'loan' && t.director_id === directorId)
-        .reduce((sum, t) => sum + t.amount, 0);
-      
-      const transfersOut = transactions
-        .filter(t => t.transaction_type === 'transfer' && t.from_director_id === directorId)
-        .reduce((sum, t) => sum + t.amount, 0);
-      
-      const transfersIn = transactions
-        .filter(t => t.transaction_type === 'transfer' && t.to_director_id === directorId)
-        .reduce((sum, t) => sum + t.amount, 0);
-      
-      const shareOfIncome = calculateDirectorIncome(directorId, transactions, totalDirectors);
-      const balance = calculateDirectorBalance(directorId, transactions, totalDirectors);
-      
-      return NextResponse.json({
-        directorId,
-        directorOwnIncome,
-        directorExpenses,
-        loansGiven,
-        transfersOut,
-        transfersIn,
-        shareOfIncome,
-        balance,
-        period,
-        month,
-        year
+
+      const data = await getDirectorDashboardData(db, directorId, period, month, year);
+      const {
+        transactions: _tx,
+        directorName: _n,
+        directorEmail: _e,
+        totalApprovedDirectors: _td,
+        ...summary
+      } = data;
+      return NextResponse.json(summary);
+    }
+
+    // Dashboard - Director (CSV export)
+    if (path === '/dashboard/director/csv') {
+      const user = await requireAuth(request);
+      if (user instanceof NextResponse) return user;
+
+      const { searchParams } = new URL(request.url);
+      const directorId = searchParams.get('director_id') || user.sub;
+      const period = searchParams.get('period') || 'all';
+      const month = searchParams.get('month');
+      const year = searchParams.get('year');
+
+      const data = await getDirectorDashboardData(db, directorId, period, month, year);
+      const periodLabel = formatDashboardPeriodLabel(period, month, year);
+      const csv = directorDashboardExportCsv(data);
+      const namePart = (data.directorName || 'director').replace(/[^\w\-]+/g, '_').slice(0, 30);
+      const safe = periodLabel.replace(/[^\w\-]+/g, '_').slice(0, 30);
+      return new NextResponse(csv, {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/csv; charset=utf-8',
+          'Content-Disposition': `attachment; filename="my-dashboard_${namePart}_${safe}.csv"`
+        }
       });
     }
     
