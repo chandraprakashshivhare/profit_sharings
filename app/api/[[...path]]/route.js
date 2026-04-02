@@ -617,6 +617,7 @@ export async function POST(request) {
         name,
         email: email.toLowerCase(),
         password_hash: passwordHash,
+        status: 'pending',
         created_at: new Date(),
         created_by: user.sub
       };
