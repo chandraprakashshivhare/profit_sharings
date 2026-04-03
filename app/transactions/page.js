@@ -45,6 +45,8 @@ export default function TransactionsPage() {
   const [formData, setFormData] = useState({
     transaction_type: 'income',
     amount: '',
+    bank_name: '',
+    transaction_id: '',
     account_type: 'company',
     director_id: '',
     project_id: '',
@@ -222,6 +224,8 @@ export default function TransactionsPage() {
     setFormData({
       transaction_type: 'income',
       amount: '',
+      bank_name: '',
+      transaction_id: '',
       account_type: 'company',
       director_id: '',
       project_id: '',
@@ -238,6 +242,8 @@ export default function TransactionsPage() {
     setFormData({
       transaction_type: transaction.transaction_type,
       amount: transaction.amount,
+      bank_name: transaction.bank_name || '',
+      transaction_id: transaction.transaction_id || '',
       account_type: transaction.account_type || 'company',
       director_id: transaction.director_id || '',
       project_id: transaction.project_id || '',
@@ -436,6 +442,26 @@ export default function TransactionsPage() {
                       />
                     </div>
 
+                    <div className="space-y-2">
+                      <Label htmlFor="bank_name">Bank Name</Label>
+                      <Input
+                        id="bank_name"
+                        value={formData.bank_name}
+                        onChange={(e) => setFormData({ ...formData, bank_name: e.target.value })}
+                        placeholder="e.g. HDFC / SBI"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="transaction_id">Transaction ID</Label>
+                      <Input
+                        id="transaction_id"
+                        value={formData.transaction_id}
+                        onChange={(e) => setFormData({ ...formData, transaction_id: e.target.value })}
+                        placeholder="e.g. TXN-0001"
+                      />
+                    </div>
+
                     {(formData.transaction_type === 'income' || formData.transaction_type === 'expense') && (
                       <div className="space-y-2">
                         <Label htmlFor="account_type">Account Type</Label>
@@ -625,6 +651,8 @@ export default function TransactionsPage() {
                         <TableHeader>
                           <TableRow>
                             <TableHead>Date</TableHead>
+                            <TableHead>Transaction ID</TableHead>
+                            <TableHead>Bank Name</TableHead>
                             <TableHead>Type</TableHead>
                             <TableHead>Amount</TableHead>
                             <TableHead>Details</TableHead>
@@ -638,6 +666,12 @@ export default function TransactionsPage() {
                             <TableRow key={transaction.id}>
                               <TableCell className="font-medium">
                                 {formatDate(transaction.transaction_date)}
+                              </TableCell>
+                              <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
+                                {transaction.transaction_id || '—'}
+                              </TableCell>
+                              <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
+                                {transaction.bank_name || '—'}
                               </TableCell>
                               <TableCell>
                                 <div className="flex items-center space-x-2">
@@ -733,6 +767,8 @@ export default function TransactionsPage() {
                         <TableHeader>
                           <TableRow>
                             <TableHead>Date</TableHead>
+                            <TableHead>Transaction ID</TableHead>
+                            <TableHead>Bank Name</TableHead>
                             <TableHead>Type</TableHead>
                             <TableHead>Amount</TableHead>
                             <TableHead>Description</TableHead>
@@ -745,6 +781,12 @@ export default function TransactionsPage() {
                             <TableRow key={transaction.id}>
                               <TableCell className="font-medium">
                                 {formatDate(transaction.transaction_date)}
+                              </TableCell>
+                              <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
+                                {transaction.transaction_id || '—'}
+                              </TableCell>
+                              <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
+                                {transaction.bank_name || '—'}
                               </TableCell>
                               <TableCell>
                                 <div className="flex items-center space-x-2">

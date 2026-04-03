@@ -569,7 +569,7 @@ export async function POST(request) {
       if (user instanceof NextResponse) return user;
       
       const body = await request.json();
-      const { transaction_type, amount, account_type, director_id, project_id, from_director_id, to_director_id, description, transaction_date } = body;
+      const { transaction_type, amount, account_type, director_id, project_id, from_director_id, to_director_id, description, transaction_date, bank_name, transaction_id } = body;
       
       if (!transaction_type || !amount) {
         return NextResponse.json({ error: 'Transaction type and amount are required' }, { status: 400 });
@@ -589,6 +589,8 @@ export async function POST(request) {
         from_director_id: from_director_id || null,
         to_director_id: to_director_id || null,
         description: description || '',
+        bank_name: bank_name || null,
+        transaction_id: transaction_id || null,
         transaction_date: transaction_date ? new Date(transaction_date) : new Date(),
         created_at: new Date(),
         created_by: user.sub
@@ -747,6 +749,8 @@ export async function PUT(request) {
       if (body.from_director_id !== undefined) updateData.from_director_id = body.from_director_id;
       if (body.to_director_id !== undefined) updateData.to_director_id = body.to_director_id;
       if (body.description !== undefined) updateData.description = body.description;
+      if (body.bank_name !== undefined) updateData.bank_name = body.bank_name || null;
+      if (body.transaction_id !== undefined) updateData.transaction_id = body.transaction_id || null;
       if (body.transaction_date !== undefined) updateData.transaction_date = new Date(body.transaction_date);
       updateData.updated_at = new Date();
       updateData.updated_by = user.sub;

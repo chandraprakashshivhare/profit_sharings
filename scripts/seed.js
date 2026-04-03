@@ -40,6 +40,8 @@ const SEED_TRANSACTIONS = [
     project_id: null,
     from_director_id: null,
     to_director_id: null,
+    bank_name: 'Seed Bank',
+    transaction_id: 'TXN-1001',
     amount: 100000,
     description: '[seed] Company income (initial)'
   },
@@ -51,6 +53,8 @@ const SEED_TRANSACTIONS = [
     project_id: null,
     from_director_id: null,
     to_director_id: null,
+    bank_name: 'Seed Bank',
+    transaction_id: 'TXN-1002',
     amount: 25000,
     description: '[seed] Company expense (initial)'
   },
@@ -62,6 +66,8 @@ const SEED_TRANSACTIONS = [
     project_id: null,
     from_director_id: null,
     to_director_id: null,
+    bank_name: 'Seed Bank',
+    transaction_id: 'TXN-1003',
     amount: 40000,
     description: '[seed] Loan given to company (initial)'
   },
@@ -73,6 +79,8 @@ const SEED_TRANSACTIONS = [
     project_id: null,
     from_director_id: '__FROM_DIRECTOR__',
     to_director_id: '__TO_DIRECTOR__',
+    bank_name: 'Seed Bank',
+    transaction_id: 'TXN-1004',
     amount: 10000,
     description: '[seed] Transfer between directors (initial)'
   }
@@ -180,6 +188,8 @@ async function seedDatabase() {
         to_director_id:
           seedTx.to_director_id === '__TO_DIRECTOR__' ? directorTwo.id : (seedTx.to_director_id ?? null),
         description: seedTx.description || '',
+        bank_name: seedTx.bank_name ?? null,
+        transaction_id: seedTx.transaction_id ?? null,
         transaction_date: txDate,
         created_at: new Date(),
         created_by: directorOne.id
