@@ -36,6 +36,7 @@ export default function TransactionsPage() {
   const [loadingDeleted, setLoadingDeleted] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [period, setPeriod] = useState('all');
+  const [typeFilter, setTypeFilter] = useState('all');
   const [month, setMonth] = useState(new Date().getMonth().toString());
   const [year, setYear] = useState(new Date().getFullYear().toString());
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -63,6 +64,9 @@ export default function TransactionsPage() {
     } else if (period === 'year') {
       qs += `&year=${year}`;
     }
+    if (typeFilter !== 'all') {
+      qs += `&type=${typeFilter}`;
+    }
     return qs;
   };
 
@@ -82,7 +86,7 @@ export default function TransactionsPage() {
 
   useEffect(() => {
     fetchTransactions();
-  }, [period, month, year]);
+  }, [period, month, year, typeFilter]);
 
   const fetchTransactions = async () => {
     setLoading(true);
@@ -335,6 +339,19 @@ export default function TransactionsPage() {
                   <SelectItem value="all">All Time</SelectItem>
                   <SelectItem value="year">Financial Year</SelectItem>
                   <SelectItem value="month">Month</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Select value={typeFilter} onValueChange={setTypeFilter}>
+                <SelectTrigger className="w-[150px]">
+                  <SelectValue placeholder="Type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Types</SelectItem>
+                  <SelectItem value="income">Income</SelectItem>
+                  <SelectItem value="expense">Expense</SelectItem>
+                  <SelectItem value="loan">Loan</SelectItem>
+                  <SelectItem value="transfer">Transfer</SelectItem>
                 </SelectContent>
               </Select>
 

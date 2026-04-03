@@ -3,6 +3,7 @@ import { getDb } from '@/lib/db';
 import { hashPassword, verifyPassword, createAccessToken, createRefreshToken, getUserFromRequest, verifyToken } from '@/lib/auth';
 import { v4 as uuidv4 } from 'uuid';
 import {
+  allDirectorsDashboardExportCsv,
   companyDashboardExportCsv,
   directorDashboardExportCsv,
   transactionAuditExportCsv,
@@ -162,7 +163,7 @@ export async function GET(request) {
       const directorId = searchParams.get('director_id');
 
       const query = buildTransactionsListQuery({ period, month, year, type, directorId });
-      const transactions = await db.collection('transactions').find(query).sort({ transaction_date: -1 }).toArray();
+      const transactions = await db.collection('transactions').find(query).sort({ created_at: -1 }).toArray();
       return NextResponse.json(transactions);
     }
 
@@ -320,6 +321,38 @@ export async function GET(request) {
       });
     }
 
+    // Dashboard - All directors (CSV export)
+    if (path === '/dashboard/directors/csv') {
+      const user = await requireAuth(request);
+      if (user instanceof NextResponse) return user;
+
+      const { searchParams } = new URL(request.url);
+      const period = searchParams.get('period') || 'all';
+      const month = searchParams.get('month');
+      const year = searchParams.get('year');
+
+      const approvedDirectors = await db
+        .collection('directors')
+        .find({ status: 'approved' })
+        .project({ id: 1 })
+        .toArray();
+
+      const allDirectorData = await Promise.all(
+        approvedDirectors.map((d) => getDirectorDashboardData(db, d.id, period, month, year))
+      );
+
+      const csv = allDirectorsDashboardExportCsv(allDirectorData);
+      const periodLabel = formatDashboardPeriodLabel(period, month, year);
+      const safe = periodLabel.replace(/[^\w\-]+/g, '_').slice(0, 40) || 'all';
+      return new NextResponse(csv, {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/csv; charset=utf-8',
+          'Content-Disposition': `attachment; filename="all-directors-dashboard_${safe}.csv"`
+        }
+      });
+    }
+
     // Dashboard - Director (JSON)
     if (path === '/dashboard/director') {
       const user = await requireAuth(request);
@@ -332,13 +365,7 @@ export async function GET(request) {
       const year = searchParams.get('year');
 
       const data = await getDirectorDashboardData(db, directorId, period, month, year);
-      const {
-        transactions: _tx,
-        directorName: _n,
-        directorEmail: _e,
-        totalApprovedDirectors: _td,
-        ...summary
-      } = data;
+      const { transactions: _tx, ...summary } = data;
       return NextResponse.json(summary);
     }
 

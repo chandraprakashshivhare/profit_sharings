@@ -18,9 +18,12 @@ export default function DashboardPage() {
   const [month, setMonth] = useState(new Date().getMonth().toString());
   const [year, setYear] = useState(new Date().getFullYear().toString());
   const [companyData, setCompanyData] = useState(null);
-  const [directorData, setDirectorData] = useState(null);
+  const [myDirectorData, setMyDirectorData] = useState(null);
+  const [otherDirectorDataList, setOtherDirectorDataList] = useState([]);
+  const [directors, setDirectors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(null);
+  const otherDirectors = directors.filter((d) => d.id !== user?.id);
 
   const dashboardQueryString = () => {
     let qs = `period=${period}`;
@@ -34,25 +37,49 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (user) {
+      fetchDirectors();
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (user) {
       fetchDashboardData();
     }
-  }, [user, period, month, year]);
+  }, [user, period, month, year, directors]);
+
+  const fetchDirectors = async () => {
+    try {
+      const res = await apiRequest('/api/directors');
+      if (res.ok) {
+        const data = await res.json();
+        setDirectors(data);
+      }
+    } catch (e) {
+      console.error('Failed to load directors for dashboard:', e);
+    }
+  };
 
   const fetchDashboardData = async () => {
     setLoading(true);
     try {
       const q = dashboardQueryString();
       const companyUrl = `/api/dashboard/company?${q}`;
-      const directorUrl = `/api/dashboard/director?${q}`;
+      const myDirectorUrl = `/api/dashboard/director?${q}&director_id=${encodeURIComponent(user.id)}`;
+      const otherDirectorUrls = otherDirectors.map(
+        (d) => `/api/dashboard/director?${q}&director_id=${encodeURIComponent(d.id)}`
+      );
 
-      const [companyRes, directorRes] = await Promise.all([
+      const [companyRes, myDirectorRes, ...otherDirectorResponses] = await Promise.all([
         apiRequest(companyUrl),
-        apiRequest(directorUrl)
+        apiRequest(myDirectorUrl),
+        ...otherDirectorUrls.map((url) => apiRequest(url))
       ]);
 
-      if (companyRes.ok && directorRes.ok) {
+      const othersOk = otherDirectorResponses.every((r) => r.ok);
+      if (companyRes.ok && myDirectorRes.ok && othersOk) {
         setCompanyData(await companyRes.json());
-        setDirectorData(await directorRes.json());
+        setMyDirectorData(await myDirectorRes.json());
+        setOtherDirectorDataList(await Promise.all(otherDirectorResponses.map((r) => r.json())));
       } else {
         toast.error('Failed to load dashboard data');
       }
@@ -64,19 +91,37 @@ export default function DashboardPage() {
     }
   };
 
-  const handleExportCsv = async (kind) => {
+  const handleExportCsv = async (kind, directorId = null) => {
     const q = dashboardQueryString();
-    const path = kind === 'company' ? '/api/dashboard/company/csv' : '/api/dashboard/director/csv';
-    setExporting(kind);
+    const path = (() => {
+      if (kind === 'company') return '/api/dashboard/company/csv';
+      if (kind === 'directors-all') return '/api/dashboard/directors/csv';
+      return '/api/dashboard/director/csv';
+    })();
+    const extra = (() => {
+      if (kind === 'director' && user?.id) {
+        return `&director_id=${encodeURIComponent(user.id)}`;
+      }
+      if (kind === 'director-other' && directorId) {
+        return `&director_id=${encodeURIComponent(directorId)}`;
+      }
+      return '';
+    })();
+    const exportKey = kind === 'director-other' ? `director-other:${directorId}` : kind;
+    setExporting(exportKey);
     try {
-      const res = await apiDownload(`${path}?${q}`);
+      const res = await apiDownload(`${path}?${q}${extra}`);
       if (!res.ok) {
         toast.error('Export failed');
         return;
       }
       const blob = await res.blob();
       const cd = res.headers.get('Content-Disposition');
-      let filename = kind === 'company' ? 'company-dashboard.csv' : 'my-dashboard.csv';
+      let filename = 'dashboard.csv';
+      if (kind === 'company') filename = 'company-dashboard.csv';
+      if (kind === 'director') filename = 'my-dashboard.csv';
+      if (kind === 'director-other') filename = 'director-dashboard.csv';
+      if (kind === 'directors-all') filename = 'all-directors-dashboard.csv';
       const match = cd?.match(/filename="([^"]+)"/);
       if (match) filename = match[1];
       const url = URL.createObjectURL(blob);
@@ -184,7 +229,7 @@ export default function DashboardPage() {
             </TabsList>
 
             <TabsContent value="company" className="space-y-4">
-              <div className="flex justify-end">
+              <div className="flex flex-wrap justify-end gap-2">
                 <Button
                   type="button"
                   variant="outline"
@@ -195,73 +240,150 @@ export default function DashboardPage() {
                   <Download className="h-4 w-4 mr-2" />
                   {exporting === 'company' ? 'Exporting…' : 'Export CSV'}
                 </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={loading || exporting === 'directors-all'}
+                  onClick={() => handleExportCsv('directors-all')}
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  {exporting === 'directors-all' ? 'Exporting…' : 'Export All Directors'}
+                </Button>
               </div>
               {loading ? (
                 <div className="text-center py-12">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
                 </div>
               ) : companyData ? (
-                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                  <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                      <CardTitle className="text-sm font-medium">Total Income</CardTitle>
-                      <ArrowUpCircle className="h-4 w-4 text-green-600" />
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-2xl font-bold">{formatCurrency(companyData.totalIncome)}</div>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        All revenue sources
-                      </p>
-                    </CardContent>
-                  </Card>
+                <>
+                  <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                    <Card>
+                      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Total Income</CardTitle>
+                        <ArrowUpCircle className="h-4 w-4 text-green-600" />
+                      </CardHeader>
+                      <CardContent>
+                        <div className="text-2xl font-bold">{formatCurrency(companyData.totalIncome)}</div>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          All revenue sources
+                        </p>
+                      </CardContent>
+                    </Card>
 
-                  <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                      <CardTitle className="text-sm font-medium">Total Expenses</CardTitle>
-                      <ArrowDownCircle className="h-4 w-4 text-red-600" />
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-2xl font-bold">{formatCurrency(companyData.totalExpenses)}</div>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        All expenditures
-                      </p>
-                    </CardContent>
-                  </Card>
+                    <Card>
+                      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Total Expenses</CardTitle>
+                        <ArrowDownCircle className="h-4 w-4 text-red-600" />
+                      </CardHeader>
+                      <CardContent>
+                        <div className="text-2xl font-bold">{formatCurrency(companyData.totalExpenses)}</div>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          All expenditures
+                        </p>
+                      </CardContent>
+                    </Card>
 
-                  <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                      <CardTitle className="text-sm font-medium">Net Income</CardTitle>
-                      <TrendingUp className="h-4 w-4 text-blue-600" />
-                    </CardHeader>
-                    <CardContent>
-                      <div className={`text-2xl font-bold ${
-                        companyData.companyIncome >= 0 ? 'text-green-600' : 'text-red-600'
-                      }`}>
-                        {formatCurrency(companyData.companyIncome)}
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Income - Expenses
-                      </p>
-                    </CardContent>
-                  </Card>
+                    <Card>
+                      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Net Income</CardTitle>
+                        <TrendingUp className="h-4 w-4 text-blue-600" />
+                      </CardHeader>
+                      <CardContent>
+                        <div className={`text-2xl font-bold ${
+                          companyData.companyIncome >= 0 ? 'text-green-600' : 'text-red-600'
+                        }`}>
+                          {formatCurrency(companyData.companyIncome)}
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Income - Expenses
+                        </p>
+                      </CardContent>
+                    </Card>
 
-                  <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                      <CardTitle className="text-sm font-medium">Company Balance</CardTitle>
-                      <Wallet className="h-4 w-4 text-purple-600" />
-                    </CardHeader>
-                    <CardContent>
-                      <div className={`text-2xl font-bold ${
-                        companyData.companyBalance >= 0 ? 'text-green-600' : 'text-red-600'
-                      }`}>
-                        {formatCurrency(companyData.companyBalance)}
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Including loans
-                      </p>
-                    </CardContent>
-                  </Card>
-                </div>
+                    <Card>
+                      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Company Balance</CardTitle>
+                        <Wallet className="h-4 w-4 text-purple-600" />
+                      </CardHeader>
+                      <CardContent>
+                        <div className={`text-2xl font-bold ${
+                          companyData.companyBalance >= 0 ? 'text-green-600' : 'text-red-600'
+                        }`}>
+                          {formatCurrency(companyData.companyBalance)}
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Including loans
+                        </p>
+                      </CardContent>
+                    </Card>
+                  </div>
+
+                  {otherDirectorDataList.length > 0 ? (
+                    <div className="grid gap-4 md:grid-cols-2">
+                      {otherDirectorDataList.map((d) => (
+                        <Card key={d.directorId}>
+                          <CardHeader className="space-y-2">
+                            <div className="flex items-center justify-between gap-3">
+                              <CardTitle className="text-sm font-medium">
+                                {d.directorName || 'Director'}
+                              </CardTitle>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                disabled={loading || exporting === `director-other:${d.directorId}`}
+                                onClick={() => handleExportCsv('director-other', d.directorId)}
+                              >
+                                <Download className="h-4 w-4 mr-2" />
+                                {exporting === `director-other:${d.directorId}` ? 'Exporting…' : 'Export CSV'}
+                              </Button>
+                            </div>
+                            <CardDescription>{d.directorEmail || '—'}</CardDescription>
+                          </CardHeader>
+                          <CardContent>
+                            <div className="grid gap-3 md:grid-cols-2">
+                              <div className="rounded-md border p-3">
+                                <div className="text-xs text-muted-foreground">Income Share</div>
+                                <div className="text-base font-semibold">{formatCurrency(d.shareOfIncome)}</div>
+                              </div>
+                              <div className="rounded-md border p-3">
+                                <div className="text-xs text-muted-foreground">Personal Income</div>
+                                <div className="text-base font-semibold">{formatCurrency(d.directorOwnIncome)}</div>
+                              </div>
+                              <div className="rounded-md border p-3">
+                                <div className="text-xs text-muted-foreground">Expenses</div>
+                                <div className="text-base font-semibold">{formatCurrency(d.directorExpenses)}</div>
+                              </div>
+                              <div className="rounded-md border p-3">
+                                <div className="text-xs text-muted-foreground">Loans Given</div>
+                                <div className="text-base font-semibold">{formatCurrency(d.loansGiven)}</div>
+                              </div>
+                              <div className="rounded-md border p-3">
+                                <div className="text-xs text-muted-foreground">Transfers (Out/In)</div>
+                                <div className="text-base font-semibold">
+                                  {formatCurrency(d.transfersOut)} / {formatCurrency(d.transfersIn)}
+                                </div>
+                              </div>
+                              <div className="rounded-md border p-3">
+                                <div className="text-xs text-muted-foreground">Final Balance</div>
+                                <div className="text-base font-semibold">{formatCurrency(d.balance)}</div>
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  ) : (
+                    <Card>
+                      <CardContent className="pt-6">
+                        <p className="text-sm text-muted-foreground">
+                          No other approved directors available to display.
+                        </p>
+                      </CardContent>
+                    </Card>
+                  )}
+                </>
               ) : null}
             </TabsContent>
 
@@ -271,7 +393,7 @@ export default function DashboardPage() {
                   type="button"
                   variant="outline"
                   size="sm"
-                  disabled={loading || !directorData || exporting === 'director'}
+                  disabled={loading || !myDirectorData || exporting === 'director'}
                   onClick={() => handleExportCsv('director')}
                 >
                   <Download className="h-4 w-4 mr-2" />
@@ -282,7 +404,7 @@ export default function DashboardPage() {
                 <div className="text-center py-12">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
                 </div>
-              ) : directorData ? (
+              ) : myDirectorData ? (
                 <>
                   <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                     <Card>
@@ -291,7 +413,7 @@ export default function DashboardPage() {
                         <TrendingUp className="h-4 w-4 text-green-600" />
                       </CardHeader>
                       <CardContent>
-                        <div className="text-2xl font-bold">{formatCurrency(directorData.shareOfIncome)}</div>
+                        <div className="text-2xl font-bold">{formatCurrency(myDirectorData.shareOfIncome)}</div>
                         <p className="text-xs text-muted-foreground mt-1">
                           Equal share of company income
                         </p>
@@ -304,7 +426,7 @@ export default function DashboardPage() {
                         <ArrowUpCircle className="h-4 w-4 text-green-600" />
                       </CardHeader>
                       <CardContent>
-                        <div className="text-2xl font-bold">{formatCurrency(directorData.directorOwnIncome)}</div>
+                        <div className="text-2xl font-bold">{formatCurrency(myDirectorData.directorOwnIncome)}</div>
                         <p className="text-xs text-muted-foreground mt-1">
                           My direct earnings
                         </p>
@@ -317,7 +439,7 @@ export default function DashboardPage() {
                         <ArrowDownCircle className="h-4 w-4 text-red-600" />
                       </CardHeader>
                       <CardContent>
-                        <div className="text-2xl font-bold">{formatCurrency(directorData.directorExpenses)}</div>
+                        <div className="text-2xl font-bold">{formatCurrency(myDirectorData.directorExpenses)}</div>
                         <p className="text-xs text-muted-foreground mt-1">
                           Personal expenditures
                         </p>
@@ -330,7 +452,7 @@ export default function DashboardPage() {
                         <ArrowUpCircle className="h-4 w-4 text-orange-600" />
                       </CardHeader>
                       <CardContent>
-                        <div className="text-2xl font-bold">{formatCurrency(directorData.loansGiven)}</div>
+                        <div className="text-2xl font-bold">{formatCurrency(myDirectorData.loansGiven)}</div>
                         <p className="text-xs text-muted-foreground mt-1">
                           Loans to company
                         </p>
@@ -347,13 +469,13 @@ export default function DashboardPage() {
                           <div className="flex justify-between">
                             <span className="text-sm text-muted-foreground">Out:</span>
                             <span className="text-sm font-medium text-red-600">
-                              {formatCurrency(directorData.transfersOut)}
+                              {formatCurrency(myDirectorData.transfersOut)}
                             </span>
                           </div>
                           <div className="flex justify-between">
                             <span className="text-sm text-muted-foreground">In:</span>
                             <span className="text-sm font-medium text-green-600">
-                              {formatCurrency(directorData.transfersIn)}
+                              {formatCurrency(myDirectorData.transfersIn)}
                             </span>
                           </div>
                         </div>
@@ -367,9 +489,9 @@ export default function DashboardPage() {
                       </CardHeader>
                       <CardContent>
                         <div className={`text-2xl font-bold ${
-                          directorData.balance >= 0 ? 'text-green-600' : 'text-red-600'
+                          myDirectorData.balance >= 0 ? 'text-green-600' : 'text-red-600'
                         }`}>
-                          {formatCurrency(directorData.balance)}
+                          {formatCurrency(myDirectorData.balance)}
                         </div>
                         <p className="text-xs text-muted-foreground mt-1">
                           Net position
