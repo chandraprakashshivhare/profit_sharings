@@ -17,6 +17,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle
 } from '@/components/ui/alert-dialog';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
@@ -28,9 +29,11 @@ import { formatDashboardPeriodLabel } from '@/lib/dashboardData';
 
 export default function TransactionsPage() {
   const [transactions, setTransactions] = useState([]);
+  const [deletedTransactions, setDeletedTransactions] = useState([]);
   const [directors, setDirectors] = useState([]);
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadingDeleted, setLoadingDeleted] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [period, setPeriod] = useState('all');
   const [month, setMonth] = useState(new Date().getMonth().toString());
@@ -72,6 +75,7 @@ export default function TransactionsPage() {
   useEffect(() => {
     fetchDirectors();
     fetchProjects();
+    fetchDeletedTransactions();
   }, []);
 
   useEffect(() => {
@@ -93,6 +97,21 @@ export default function TransactionsPage() {
       toast.error('Failed to load transactions');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchDeletedTransactions = async () => {
+    setLoadingDeleted(true);
+    try {
+      const response = await apiRequest('/api/transactions/deleted');
+      if (response.ok) {
+        const data = await response.json();
+        setDeletedTransactions(data);
+      }
+    } catch (error) {
+      console.error('Failed to fetch deleted transactions:', error);
+    } finally {
+      setLoadingDeleted(false);
     }
   };
 
@@ -187,6 +206,7 @@ export default function TransactionsPage() {
         toast.success('Transaction deleted!');
         setDeleteTarget(null);
         fetchTransactions();
+        fetchDeletedTransactions();
       } else {
         toast.error('Failed to delete transaction');
       }
@@ -246,6 +266,17 @@ export default function TransactionsPage() {
     });
   };
 
+  const formatDateTime = (date) => {
+    if (!date) return 'N/A';
+    return new Date(date).toLocaleString('en-IN', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
   const getTransactionIcon = (type) => {
     switch (type) {
       case 'income':
@@ -264,6 +295,11 @@ export default function TransactionsPage() {
   const getDirectorName = (id) => {
     const director = directors.find(d => d.id === id);
     return director ? director.name : 'Unknown';
+  };
+
+  const getActorName = (id) => {
+    if (!id) return '—';
+    return getDirectorName(id);
   };
 
   const getProjectName = (id) => {
@@ -557,111 +593,189 @@ export default function TransactionsPage() {
             </div>
           </div>
 
-          {loading ? (
-            <div className="text-center py-12">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
-            </div>
-          ) : transactions.length === 0 ? (
-            <Card>
-              <CardContent className="text-center py-12">
-                <p className="text-muted-foreground">
-                  {period === 'all'
-                    ? 'No transactions yet. Create your first transaction!'
-                    : `No transactions for ${periodLabel}. Try a different period or add a transaction.`}
-                </p>
-              </CardContent>
-            </Card>
-          ) : (
-            <Card>
-              <CardHeader>
-                <CardTitle>Transactions — {periodLabel}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Date</TableHead>
-                        <TableHead>Type</TableHead>
-                        <TableHead>Amount</TableHead>
-                        <TableHead>Details</TableHead>
-                        <TableHead>Description</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {transactions.map((transaction) => (
-                        <TableRow key={transaction.id}>
-                          <TableCell className="font-medium">
-                            {formatDate(transaction.transaction_date)}
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center space-x-2">
-                              {getTransactionIcon(transaction.transaction_type)}
-                              <Badge variant="outline">
-                                {transaction.transaction_type}
-                              </Badge>
-                            </div>
-                          </TableCell>
-                          <TableCell className={`font-semibold ${
-                            transaction.transaction_type === 'income' ? 'text-green-600' : 'text-red-600'
-                          }`}>
-                            {formatCurrency(transaction.amount)}
-                          </TableCell>
-                          <TableCell>
-                            <div className="text-sm space-y-1">
-                              {transaction.account_type && (
-                                <div className="text-muted-foreground">
-                                  Account: <span className="font-medium text-foreground">{transaction.account_type}</span>
-                                </div>
-                              )}
-                              {transaction.director_id && transaction.transaction_type !== 'transfer' && (
-                                <div className="text-muted-foreground">
-                                  Director: <span className="font-medium text-foreground">{getDirectorName(transaction.director_id)}</span>
-                                </div>
-                              )}
-                              {transaction.project_id && (
-                                <div className="text-muted-foreground">
-                                  Project: <span className="font-medium text-foreground">{getProjectName(transaction.project_id)}</span>
-                                </div>
-                              )}
-                              {transaction.from_director_id && transaction.to_director_id && (
-                                <div className="text-muted-foreground">
-                                  {getDirectorName(transaction.from_director_id)} → {getDirectorName(transaction.to_director_id)}
-                                </div>
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell className="max-w-xs truncate">
-                            {transaction.description || '-'}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex justify-end space-x-2">
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => openEditDialog(transaction)}
-                              >
-                                <Pencil className="w-3 h-3" />
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="text-red-600 hover:text-red-700"
-                                onClick={() => setDeleteTarget(transaction)}
-                              >
-                                <Trash2 className="w-3 h-3" />
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+          <Tabs defaultValue="active" className="w-full">
+            <TabsList className="mb-4">
+              <TabsTrigger value="active">Active</TabsTrigger>
+              <TabsTrigger value="deleted">Deleted</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="active">
+              {loading ? (
+                <div className="text-center py-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
                 </div>
-              </CardContent>
-            </Card>
-          )}
+              ) : transactions.length === 0 ? (
+                <Card>
+                  <CardContent className="text-center py-12">
+                    <p className="text-muted-foreground">
+                      {period === 'all'
+                        ? 'No transactions yet. Create your first transaction!'
+                        : `No transactions for ${periodLabel}. Try a different period or add a transaction.`}
+                    </p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Transactions — {periodLabel}</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Date</TableHead>
+                            <TableHead>Type</TableHead>
+                            <TableHead>Amount</TableHead>
+                            <TableHead>Details</TableHead>
+                            <TableHead>Description</TableHead>
+                            <TableHead>By</TableHead>
+                            <TableHead className="text-right">Actions</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {transactions.map((transaction) => (
+                            <TableRow key={transaction.id}>
+                              <TableCell className="font-medium">
+                                {formatDate(transaction.transaction_date)}
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center space-x-2">
+                                  {getTransactionIcon(transaction.transaction_type)}
+                                  <Badge variant="outline">
+                                    {transaction.transaction_type}
+                                  </Badge>
+                                </div>
+                              </TableCell>
+                              <TableCell className={`font-semibold ${
+                                transaction.transaction_type === 'income' ? 'text-green-600' : 'text-red-600'
+                              }`}>
+                                {formatCurrency(transaction.amount)}
+                              </TableCell>
+                              <TableCell>
+                                <div className="text-sm space-y-1">
+                                  {transaction.account_type && (
+                                    <div className="text-muted-foreground">
+                                      Account: <span className="font-medium text-foreground">{transaction.account_type}</span>
+                                    </div>
+                                  )}
+                                  {transaction.director_id && transaction.transaction_type !== 'transfer' && (
+                                    <div className="text-muted-foreground">
+                                      Director: <span className="font-medium text-foreground">{getDirectorName(transaction.director_id)}</span>
+                                    </div>
+                                  )}
+                                  {transaction.project_id && (
+                                    <div className="text-muted-foreground">
+                                      Project: <span className="font-medium text-foreground">{getProjectName(transaction.project_id)}</span>
+                                    </div>
+                                  )}
+                                  {transaction.from_director_id && transaction.to_director_id && (
+                                    <div className="text-muted-foreground">
+                                      {getDirectorName(transaction.from_director_id)} → {getDirectorName(transaction.to_director_id)}
+                                    </div>
+                                  )}
+                                </div>
+                              </TableCell>
+                              <TableCell className="max-w-xs truncate">
+                                {transaction.description || '-'}
+                              </TableCell>
+                              <TableCell className="text-sm text-muted-foreground">
+                                {getActorName(transaction.updated_by || transaction.created_by)}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <div className="flex justify-end space-x-2">
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => openEditDialog(transaction)}
+                                  >
+                                    <Pencil className="w-3 h-3" />
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="text-red-600 hover:text-red-700"
+                                    onClick={() => setDeleteTarget(transaction)}
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </TabsContent>
+
+            <TabsContent value="deleted">
+              <Card variant="outline">
+                <CardHeader>
+                  <CardTitle className="flex items-center justify-between">
+                    <span>Deleted transactions (soft-deleted)</span>
+                    {loadingDeleted && (
+                      <span className="text-xs text-muted-foreground">Loading…</span>
+                    )}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {deletedTransactions.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      No deleted transactions. When you delete a transaction, it will still appear here for reference but
+                      be excluded from the main books and dashboards.
+                    </p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Date</TableHead>
+                            <TableHead>Type</TableHead>
+                            <TableHead>Amount</TableHead>
+                            <TableHead>Description</TableHead>
+                            <TableHead>Deleted at</TableHead>
+                            <TableHead>Deleted by</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {deletedTransactions.map((transaction) => (
+                            <TableRow key={transaction.id}>
+                              <TableCell className="font-medium">
+                                {formatDate(transaction.transaction_date)}
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center space-x-2">
+                                  {getTransactionIcon(transaction.transaction_type)}
+                                  <Badge variant="outline">
+                                    {transaction.transaction_type}
+                                  </Badge>
+                                </div>
+                              </TableCell>
+                              <TableCell className="font-semibold text-muted-foreground">
+                                {formatCurrency(transaction.amount)}
+                              </TableCell>
+                              <TableCell className="max-w-xs truncate text-sm text-muted-foreground">
+                                {transaction.description || '-'}
+                              </TableCell>
+                              <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
+                                {formatDateTime(transaction.deleted_at)}
+                              </TableCell>
+                              <TableCell className="text-sm text-muted-foreground">
+                                {getActorName(transaction.deleted_by)}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+          </Tabs>
         </div>
       </div>
 

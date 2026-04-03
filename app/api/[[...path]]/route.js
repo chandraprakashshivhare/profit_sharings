@@ -149,7 +149,7 @@ export async function GET(request) {
       });
     }
 
-    // Transactions - List
+    // Transactions - List (active / non-deleted)
     if (path === '/transactions') {
       const user = await requireAuth(request);
       if (user instanceof NextResponse) return user;
@@ -166,13 +166,26 @@ export async function GET(request) {
       return NextResponse.json(transactions);
     }
 
+    // Transactions - List (soft deleted only, all time)
+    if (path === '/transactions/deleted') {
+      const user = await requireAuth(request);
+      if (user instanceof NextResponse) return user;
+
+      const transactions = await db
+        .collection('transactions')
+        .find({ is_deleted: true })
+        .sort({ deleted_at: -1 })
+        .toArray();
+      return NextResponse.json(transactions);
+    }
+
     // Transactions - Get by ID
     if (path.startsWith('/transactions/')) {
       const user = await requireAuth(request);
       if (user instanceof NextResponse) return user;
       
       const id = path.split('/')[2];
-      const transaction = await db.collection('transactions').findOne({ id });
+      const transaction = await db.collection('transactions').findOne({ id, is_deleted: { $ne: true } });
       
       if (!transaction) {
         return NextResponse.json({ error: 'Transaction not found' }, { status: 404 });
@@ -715,7 +728,7 @@ export async function PUT(request) {
     if (path.startsWith('/transactions/')) {
       const id = path.split('/')[2];
       const body = await request.json();
-      const existing = await db.collection('transactions').findOne({ id });
+      const existing = await db.collection('transactions').findOne({ id, is_deleted: { $ne: true } });
       if (!existing) {
         return NextResponse.json({ error: 'Transaction not found' }, { status: 404 });
       }
@@ -815,7 +828,7 @@ export async function DELETE(request) {
     // Transactions - Delete
     if (path.startsWith('/transactions/')) {
       const id = path.split('/')[2];
-      const existing = await db.collection('transactions').findOne({ id });
+      const existing = await db.collection('transactions').findOne({ id, is_deleted: { $ne: true } });
       if (!existing) {
         return NextResponse.json({ error: 'Transaction not found' }, { status: 404 });
       }
@@ -825,8 +838,19 @@ export async function DELETE(request) {
         actorId: user.sub,
         transaction: existing
       });
-      await db.collection('transactions').deleteOne({ id });
-      return NextResponse.json({ message: 'Transaction deleted' });
+      await db.collection('transactions').updateOne(
+        { id },
+        {
+          $set: {
+            is_deleted: true,
+            deleted_at: new Date(),
+            deleted_by: user.sub,
+            updated_at: new Date(),
+            updated_by: user.sub
+          }
+        }
+      );
+      return NextResponse.json({ message: 'Transaction deleted (soft)' });
     }
     
     // Directors - Delete

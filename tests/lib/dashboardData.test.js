@@ -21,7 +21,7 @@ describe('lib/dashboardData', () => {
   });
 
   it('buildTransactionDateQuery produces empty query for all-time', () => {
-    expect(buildTransactionDateQuery('all')).toEqual({});
+    expect(buildTransactionDateQuery('all')).toEqual({ is_deleted: { $ne: true } });
   });
 
   it('buildTransactionDateQuery produces month range', () => {
@@ -40,7 +40,11 @@ describe('lib/dashboardData', () => {
 
   it('buildTransactionsListQuery adds optional filters', () => {
     const q = buildTransactionsListQuery({ period: 'all', type: 'income', directorId: 'd1' });
-    expect(q).toEqual({ transaction_type: 'income', director_id: 'd1' });
+    expect(q).toEqual({
+      is_deleted: { $ne: true },
+      transaction_type: 'income',
+      director_id: 'd1'
+    });
   });
 
   it('buildAuditListQuery maps transaction_date range to recorded_at', () => {
