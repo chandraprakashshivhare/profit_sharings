@@ -11,7 +11,12 @@ export default defineConfig({
     environment: 'node',
     include: ['tests/**/*.test.js'],
     setupFiles: ['tests/setup/env.js'],
-    testTimeout: 60_000
+    testTimeout: 60_000,
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'html'],
+      reportsDirectory: './coverage'
+    }
   }
 });
 

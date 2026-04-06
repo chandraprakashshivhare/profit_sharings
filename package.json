@@ -11,7 +11,8 @@
         "seed": "node scripts/seed.js",
         "setup": "node scripts/seed.js && echo 'Setup complete!'",
         "test": "vitest run",
-        "test:watch": "vitest"
+        "test:watch": "vitest",
+        "test:coverage": "vitest run --coverage"
     },
     "dependencies": {
         "@hookform/resolvers": "^5.1.1",
@@ -74,6 +75,7 @@
         "globals": "^16.2.0",
         "postcss": "^8",
         "tailwindcss": "^3.4.1",
+        "@vitest/coverage-v8": "^3.2.4",
         "mongodb-memory-server": "^10.1.4",
         "vitest": "^3.2.4"
     },
