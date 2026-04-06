@@ -1,0 +1,22 @@
+import { defineConfig } from 'vitest/config';
+import path from 'node:path';
+
+export default defineConfig({
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname)
+    }
+  },
+  test: {
+    environment: 'node',
+    include: ['tests/**/*.test.js'],
+    setupFiles: ['tests/setup/env.js'],
+    testTimeout: 60_000,
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'html'],
+      reportsDirectory: './coverage'
+    }
+  }
+});
+

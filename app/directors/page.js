@@ -10,6 +10,15 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle
+} from '@/components/ui/alert-dialog';
 import { Users, Plus, Pencil, Trash2, Check, X, Clock } from 'lucide-react';
 import { toast } from 'sonner';
 import { apiRequest } from '@/lib/api';
@@ -20,6 +29,10 @@ export default function DirectorsPage() {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingDirector, setEditingDirector] = useState(null);
+  const [rejectTarget, setRejectTarget] = useState(null);
+  const [rejectInProgress, setRejectInProgress] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteInProgress, setDeleteInProgress] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -78,16 +91,17 @@ export default function DirectorsPage() {
     }
   };
 
-  const handleReject = async (id) => {
-    if (!confirm('Are you sure you want to reject this director registration?')) return;
-
+  const confirmReject = async () => {
+    if (!rejectTarget || rejectInProgress) return;
+    setRejectInProgress(true);
     try {
-      const response = await apiRequest(`/api/directors/reject/${id}`, {
+      const response = await apiRequest(`/api/directors/reject/${rejectTarget.id}`, {
         method: 'POST'
       });
 
       if (response.ok) {
         toast.success('Director registration rejected');
+        setRejectTarget(null);
         fetchPendingDirectors();
       } else {
         const error = await response.json();
@@ -96,6 +110,8 @@ export default function DirectorsPage() {
     } catch (error) {
       console.error('Failed to reject director:', error);
       toast.error('Failed to reject director');
+    } finally {
+      setRejectInProgress(false);
     }
   };
 
@@ -116,10 +132,11 @@ export default function DirectorsPage() {
       });
 
       if (response.ok) {
-        toast.success(editingDirector ? 'Director updated!' : 'Director added!');
+        toast.success(editingDirector ? 'Director updated!' : 'Director added and sent for approval!');
         setDialogOpen(false);
         resetForm();
         fetchDirectors();
+        fetchPendingDirectors();
       } else {
         const error = await response.json();
         toast.error(error.error || 'Failed to save director');
@@ -130,17 +147,19 @@ export default function DirectorsPage() {
     }
   };
 
-  const handleDelete = async (id) => {
-    if (!confirm('Are you sure you want to delete this director? This action cannot be undone.')) return;
-
+  const confirmDelete = async () => {
+    if (!deleteTarget || deleteInProgress) return;
+    setDeleteInProgress(true);
     try {
-      const response = await apiRequest(`/api/directors/${id}`, {
+      const response = await apiRequest(`/api/directors/${deleteTarget.id}`, {
         method: 'DELETE'
       });
 
       if (response.ok) {
         toast.success('Director deleted!');
+        setDeleteTarget(null);
         fetchDirectors();
+        fetchPendingDirectors();
       } else {
         const error = await response.json();
         toast.error(error.error || 'Failed to delete director');
@@ -148,6 +167,8 @@ export default function DirectorsPage() {
     } catch (error) {
       console.error('Failed to delete director:', error);
       toast.error('Failed to delete director');
+    } finally {
+      setDeleteInProgress(false);
     }
   };
 
@@ -323,7 +344,7 @@ export default function DirectorsPage() {
                                 size="sm"
                                 variant="outline"
                                 className="flex-1 text-red-600 hover:text-red-700"
-                                onClick={() => handleDelete(director.id)}
+                                onClick={() => setDeleteTarget(director)}
                               >
                                 <Trash2 className="w-3 h-3 mr-1" />
                                 Delete
@@ -386,7 +407,7 @@ export default function DirectorsPage() {
                               size="sm"
                               variant="outline"
                               className="flex-1 text-red-600 hover:text-red-700"
-                              onClick={() => handleReject(director.id)}
+                                onClick={() => setRejectTarget(director)}
                             >
                               <X className="w-3 h-3 mr-1" />
                               Reject
@@ -402,6 +423,93 @@ export default function DirectorsPage() {
           )}
         </div>
       </div>
+
+      <AlertDialog
+        open={!!rejectTarget}
+        onOpenChange={(open) => {
+          if (!open && !rejectInProgress) setRejectTarget(null);
+        }}
+      >
+        <AlertDialogContent className="sm:max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reject director registration?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will mark the pending registration as rejected. The director will not be able to login
+              unless they register again.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {rejectTarget ? (
+            <div className="rounded-lg border border-border bg-muted/40 px-4 py-3 space-y-2 text-sm">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">Name</span>
+                <span className="font-medium text-foreground">{rejectTarget.name}</span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">Email</span>
+                <span className="text-foreground">{rejectTarget.email}</span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">Requested</span>
+                <span className="text-foreground">{formatDate(rejectTarget.created_at)}</span>
+              </div>
+            </div>
+          ) : null}
+          <AlertDialogFooter className="gap-2 sm:gap-0">
+            <AlertDialogCancel disabled={rejectInProgress}>Cancel</AlertDialogCancel>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={rejectInProgress}
+              onClick={confirmReject}
+            >
+              {rejectInProgress ? 'Rejecting…' : 'Reject director'}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => {
+          if (!open && !deleteInProgress) setDeleteTarget(null);
+        }}
+      >
+        <AlertDialogContent className="sm:max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete director?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently remove the director account. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {deleteTarget ? (
+            <div className="rounded-lg border border-border bg-muted/40 px-4 py-3 space-y-2 text-sm">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">Name</span>
+                <span className="font-medium text-foreground">{deleteTarget.name}</span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">Email</span>
+                <span className="text-foreground">{deleteTarget.email}</span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">Joined</span>
+                <span className="text-foreground">{formatDate(deleteTarget.created_at)}</span>
+              </div>
+            </div>
+          ) : null}
+          <AlertDialogFooter className="gap-2 sm:gap-0">
+            <AlertDialogCancel disabled={deleteInProgress}>Cancel</AlertDialogCancel>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={deleteInProgress}
+              onClick={confirmDelete}
+            >
+              {deleteInProgress ? 'Deleting…' : 'Delete director'}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </ProtectedRoute>
   );
 }

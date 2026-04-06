@@ -2,7 +2,21 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { hashPassword, verifyPassword, createAccessToken, createRefreshToken, getUserFromRequest, verifyToken } from '@/lib/auth';
 import { v4 as uuidv4 } from 'uuid';
-import { calculateCompanyIncome, calculateCompanyBalance, calculateDirectorIncome, calculateDirectorBalance, getCurrentFinancialYear, getFinancialYearDates, getMonthDateRange } from '@/lib/financial';
+import {
+  allDirectorsDashboardExportCsv,
+  companyDashboardExportCsv,
+  directorDashboardExportCsv,
+  transactionAuditExportCsv,
+  transactionsListExportCsv
+} from '@/lib/csv';
+import {
+  buildAuditListQuery,
+  buildTransactionsListQuery,
+  formatDashboardPeriodLabel,
+  getCompanyDashboardData,
+  getDirectorDashboardData
+} from '@/lib/dashboardData';
+import { insertTransactionAudit } from '@/lib/transactionAudit';
 
 // Helper to set auth cookies
 function setAuthCookies(response, accessToken, refreshToken) {
@@ -98,30 +112,81 @@ export async function GET(request) {
       return NextResponse.json(project);
     }
     
-    // Transactions - List
+    // Transactions - CSV export (must be before /transactions/:id)
+    if (path === '/transactions/csv') {
+      const user = await requireAuth(request);
+      if (user instanceof NextResponse) return user;
+
+      const { searchParams } = new URL(request.url);
+      const period = searchParams.get('period') || 'all';
+      const month = searchParams.get('month');
+      const year = searchParams.get('year');
+      const type = searchParams.get('type');
+      const directorId = searchParams.get('director_id');
+
+      const query = buildTransactionsListQuery({ period, month, year, type, directorId });
+      const transactions = await db.collection('transactions').find(query).sort({ transaction_date: -1 }).toArray();
+
+      const directors = await db
+        .collection('directors')
+        .find({ status: 'approved' })
+        .project({ id: 1, name: 1 })
+        .toArray();
+      const directorNameById = Object.fromEntries(directors.map((d) => [d.id, d.name]));
+
+      const projects = await db.collection('projects').find({}).project({ id: 1, name: 1 }).toArray();
+      const projectNameById = Object.fromEntries(projects.map((p) => [p.id, p.name]));
+
+      const csv = transactionsListExportCsv(transactions, directorNameById, projectNameById);
+      const periodLabel = formatDashboardPeriodLabel(period, month, year);
+      const safe = periodLabel.replace(/[^\w\-]+/g, '_').slice(0, 40) || 'all';
+
+      return new NextResponse(csv, {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/csv; charset=utf-8',
+          'Content-Disposition': `attachment; filename="transactions_${safe}.csv"`
+        }
+      });
+    }
+
+    // Transactions - List (active / non-deleted)
     if (path === '/transactions') {
       const user = await requireAuth(request);
       if (user instanceof NextResponse) return user;
-      
+
       const { searchParams } = new URL(request.url);
+      const period = searchParams.get('period') || 'all';
+      const month = searchParams.get('month');
+      const year = searchParams.get('year');
       const type = searchParams.get('type');
       const directorId = searchParams.get('director_id');
-      
-      const query = {};
-      if (type) query.transaction_type = type;
-      if (directorId) query.director_id = directorId;
-      
-      const transactions = await db.collection('transactions').find(query).sort({ transaction_date: -1 }).toArray();
+
+      const query = buildTransactionsListQuery({ period, month, year, type, directorId });
+      const transactions = await db.collection('transactions').find(query).sort({ created_at: -1 }).toArray();
       return NextResponse.json(transactions);
     }
-    
+
+    // Transactions - List (soft deleted only, all time)
+    if (path === '/transactions/deleted') {
+      const user = await requireAuth(request);
+      if (user instanceof NextResponse) return user;
+
+      const transactions = await db
+        .collection('transactions')
+        .find({ is_deleted: true })
+        .sort({ deleted_at: -1 })
+        .toArray();
+      return NextResponse.json(transactions);
+    }
+
     // Transactions - Get by ID
     if (path.startsWith('/transactions/')) {
       const user = await requireAuth(request);
       if (user instanceof NextResponse) return user;
       
       const id = path.split('/')[2];
-      const transaction = await db.collection('transactions').findOne({ id });
+      const transaction = await db.collection('transactions').findOne({ id, is_deleted: { $ne: true } });
       
       if (!transaction) {
         return NextResponse.json({ error: 'Transaction not found' }, { status: 404 });
@@ -129,7 +194,62 @@ export async function GET(request) {
       
       return NextResponse.json(transaction);
     }
-    
+
+    // Transaction audit — CSV (must be before JSON list path)
+    if (path === '/transaction-audit/csv') {
+      const user = await requireAuth(request);
+      if (user instanceof NextResponse) return user;
+
+      const { searchParams } = new URL(request.url);
+      const period = searchParams.get('period') || 'all';
+      const month = searchParams.get('month');
+      const year = searchParams.get('year');
+
+      const query = buildAuditListQuery({ period, month, year });
+      const entries = await db
+        .collection('transaction_audit')
+        .find(query)
+        .sort({ recorded_at: -1 })
+        .toArray();
+
+      const directors = await db.collection('directors').find({}).project({ id: 1, name: 1 }).toArray();
+      const directorNameById = Object.fromEntries(directors.map((d) => [d.id, d.name]));
+
+      const projects = await db.collection('projects').find({}).project({ id: 1, name: 1 }).toArray();
+      const projectNameById = Object.fromEntries(projects.map((p) => [p.id, p.name]));
+
+      const csv = transactionAuditExportCsv(entries, directorNameById, projectNameById);
+      const periodLabel = formatDashboardPeriodLabel(period, month, year);
+      const safe = periodLabel.replace(/[^\w\-]+/g, '_').slice(0, 40) || 'all';
+
+      return new NextResponse(csv, {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/csv; charset=utf-8',
+          'Content-Disposition': `attachment; filename="transaction-audit_${safe}.csv"`
+        }
+      });
+    }
+
+    // Transaction audit log (when actions were recorded — same period filter as transactions)
+    if (path === '/transaction-audit') {
+      const user = await requireAuth(request);
+      if (user instanceof NextResponse) return user;
+
+      const { searchParams } = new URL(request.url);
+      const period = searchParams.get('period') || 'all';
+      const month = searchParams.get('month');
+      const year = searchParams.get('year');
+
+      const query = buildAuditListQuery({ period, month, year });
+      const entries = await db
+        .collection('transaction_audit')
+        .find(query)
+        .sort({ recorded_at: -1 })
+        .toArray();
+      return NextResponse.json(entries);
+    }
+
     // Directors - List (only approved)
     if (path === '/directors') {
       const user = await requireAuth(request);
@@ -163,109 +283,114 @@ export async function GET(request) {
       return NextResponse.json(director);
     }
     
-    // Dashboard - Company
+    // Dashboard - Company (JSON)
     if (path === '/dashboard/company') {
       const user = await requireAuth(request);
       if (user instanceof NextResponse) return user;
-      
+
       const { searchParams } = new URL(request.url);
-      const period = searchParams.get('period') || 'all'; // month, year, all
-      const month = searchParams.get('month'); // 0-11
+      const period = searchParams.get('period') || 'all';
+      const month = searchParams.get('month');
       const year = searchParams.get('year');
-      
-      let query = {};
-      
-      if (period === 'month' && month && year) {
-        const { startDate, endDate } = getMonthDateRange(parseInt(year), parseInt(month));
-        query.transaction_date = { $gte: startDate, $lte: endDate };
-      } else if (period === 'year' && year) {
-        const { startDate, endDate } = getFinancialYearDates(parseInt(year));
-        query.transaction_date = { $gte: startDate, $lte: endDate };
-      }
-      
-      const transactions = await db.collection('transactions').find(query).toArray();
-      
-      const totalIncome = transactions
-        .filter(t => t.transaction_type === 'income')
-        .reduce((sum, t) => sum + t.amount, 0);
-      
-      const totalExpenses = transactions
-        .filter(t => t.transaction_type === 'expense')
-        .reduce((sum, t) => sum + t.amount, 0);
-      
-      const companyIncome = calculateCompanyIncome(transactions);
-      const companyBalance = calculateCompanyBalance(transactions);
-      
-      return NextResponse.json({
-        totalIncome,
-        totalExpenses,
-        companyIncome,
-        companyBalance,
-        period,
-        month,
-        year
+
+      const data = await getCompanyDashboardData(db, period, month, year);
+      const { transactions: _tx, ...summary } = data;
+      return NextResponse.json(summary);
+    }
+
+    // Dashboard - Company (CSV export)
+    if (path === '/dashboard/company/csv') {
+      const user = await requireAuth(request);
+      if (user instanceof NextResponse) return user;
+
+      const { searchParams } = new URL(request.url);
+      const period = searchParams.get('period') || 'all';
+      const month = searchParams.get('month');
+      const year = searchParams.get('year');
+
+      const data = await getCompanyDashboardData(db, period, month, year);
+      const periodLabel = formatDashboardPeriodLabel(period, month, year);
+      const csv = companyDashboardExportCsv(data);
+      const safe = periodLabel.replace(/[^\w\-]+/g, '_').slice(0, 40) || 'all';
+      return new NextResponse(csv, {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/csv; charset=utf-8',
+          'Content-Disposition': `attachment; filename="company-dashboard_${safe}.csv"`
+        }
       });
     }
-    
-    // Dashboard - Director
+
+    // Dashboard - All directors (CSV export)
+    if (path === '/dashboard/directors/csv') {
+      const user = await requireAuth(request);
+      if (user instanceof NextResponse) return user;
+
+      const { searchParams } = new URL(request.url);
+      const period = searchParams.get('period') || 'all';
+      const month = searchParams.get('month');
+      const year = searchParams.get('year');
+
+      const approvedDirectors = await db
+        .collection('directors')
+        .find({ status: 'approved' })
+        .project({ id: 1 })
+        .toArray();
+
+      const allDirectorData = await Promise.all(
+        approvedDirectors.map((d) => getDirectorDashboardData(db, d.id, period, month, year))
+      );
+
+      const csv = allDirectorsDashboardExportCsv(allDirectorData);
+      const periodLabel = formatDashboardPeriodLabel(period, month, year);
+      const safe = periodLabel.replace(/[^\w\-]+/g, '_').slice(0, 40) || 'all';
+      return new NextResponse(csv, {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/csv; charset=utf-8',
+          'Content-Disposition': `attachment; filename="all-directors-dashboard_${safe}.csv"`
+        }
+      });
+    }
+
+    // Dashboard - Director (JSON)
     if (path === '/dashboard/director') {
       const user = await requireAuth(request);
       if (user instanceof NextResponse) return user;
-      
+
       const { searchParams } = new URL(request.url);
       const directorId = searchParams.get('director_id') || user.sub;
       const period = searchParams.get('period') || 'all';
       const month = searchParams.get('month');
       const year = searchParams.get('year');
-      
-      let query = {};
-      
-      if (period === 'month' && month && year) {
-        const { startDate, endDate } = getMonthDateRange(parseInt(year), parseInt(month));
-        query.transaction_date = { $gte: startDate, $lte: endDate };
-      } else if (period === 'year' && year) {
-        const { startDate, endDate } = getFinancialYearDates(parseInt(year));
-        query.transaction_date = { $gte: startDate, $lte: endDate };
-      }
-      
-      const transactions = await db.collection('transactions').find(query).toArray();
-      const totalDirectors = await db.collection('directors').countDocuments({ status: 'approved' });
-      
-      const directorOwnIncome = transactions
-        .filter(t => t.transaction_type === 'income' && t.account_type === 'director' && t.director_id === directorId)
-        .reduce((sum, t) => sum + t.amount, 0);
-      
-      const directorExpenses = transactions
-        .filter(t => t.transaction_type === 'expense' && t.account_type === 'director' && t.director_id === directorId)
-        .reduce((sum, t) => sum + t.amount, 0);
-      
-      const loansGiven = transactions
-        .filter(t => t.transaction_type === 'loan' && t.director_id === directorId)
-        .reduce((sum, t) => sum + t.amount, 0);
-      
-      const transfersOut = transactions
-        .filter(t => t.transaction_type === 'transfer' && t.from_director_id === directorId)
-        .reduce((sum, t) => sum + t.amount, 0);
-      
-      const transfersIn = transactions
-        .filter(t => t.transaction_type === 'transfer' && t.to_director_id === directorId)
-        .reduce((sum, t) => sum + t.amount, 0);
-      
-      const shareOfIncome = calculateDirectorIncome(directorId, transactions, totalDirectors);
-      const balance = calculateDirectorBalance(directorId, transactions, totalDirectors);
-      
-      return NextResponse.json({
-        directorId,
-        directorOwnIncome,
-        directorExpenses,
-        loansGiven,
-        transfersOut,
-        transfersIn,
-        shareOfIncome,
-        balance,
-        period,
-        month,
-        year
+
+      const data = await getDirectorDashboardData(db, directorId, period, month, year);
+      const { transactions: _tx, ...summary } = data;
+      return NextResponse.json(summary);
+    }
+
+    // Dashboard - Director (CSV export)
+    if (path === '/dashboard/director/csv') {
+      const user = await requireAuth(request);
+      if (user instanceof NextResponse) return user;
+
+      const { searchParams } = new URL(request.url);
+      const directorId = searchParams.get('director_id') || user.sub;
+      const period = searchParams.get('period') || 'all';
+      const month = searchParams.get('month');
+      const year = searchParams.get('year');
+
+      const data = await getDirectorDashboardData(db, directorId, period, month, year);
+      const periodLabel = formatDashboardPeriodLabel(period, month, year);
+      const csv = directorDashboardExportCsv(data);
+      const namePart = (data.directorName || 'director').replace(/[^\w\-]+/g, '_').slice(0, 30);
+      const safe = periodLabel.replace(/[^\w\-]+/g, '_').slice(0, 30);
+      return new NextResponse(csv, {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/csv; charset=utf-8',
+          'Content-Disposition': `attachment; filename="my-dashboard_${namePart}_${safe}.csv"`
+        }
       });
     }
     
@@ -471,7 +596,7 @@ export async function POST(request) {
       if (user instanceof NextResponse) return user;
       
       const body = await request.json();
-      const { transaction_type, amount, account_type, director_id, project_id, from_director_id, to_director_id, description, transaction_date } = body;
+      const { transaction_type, amount, account_type, director_id, project_id, from_director_id, to_director_id, description, transaction_date, bank_name, transaction_id } = body;
       
       if (!transaction_type || !amount) {
         return NextResponse.json({ error: 'Transaction type and amount are required' }, { status: 400 });
@@ -491,15 +616,22 @@ export async function POST(request) {
         from_director_id: from_director_id || null,
         to_director_id: to_director_id || null,
         description: description || '',
+        bank_name: bank_name || null,
+        transaction_id: transaction_id || null,
         transaction_date: transaction_date ? new Date(transaction_date) : new Date(),
         created_at: new Date(),
         created_by: user.sub
       };
       
       await db.collection('transactions').insertOne(transaction);
+      await insertTransactionAudit(db, {
+        action: 'create',
+        actorId: user.sub,
+        transaction
+      });
       return NextResponse.json(transaction);
     }
-    
+
     // Directors - Create
     if (path === '/directors') {
       const user = await requireAuth(request);
@@ -527,6 +659,7 @@ export async function POST(request) {
         name,
         email: email.toLowerCase(),
         password_hash: passwordHash,
+        status: 'pending',
         created_at: new Date(),
         created_by: user.sub
       };
@@ -624,7 +757,16 @@ export async function PUT(request) {
     if (path.startsWith('/transactions/')) {
       const id = path.split('/')[2];
       const body = await request.json();
-      
+      const existing = await db.collection('transactions').findOne({ id, is_deleted: { $ne: true } });
+      if (!existing) {
+        return NextResponse.json({ error: 'Transaction not found' }, { status: 404 });
+      }
+
+      const previous = {
+        amount: existing.amount,
+        transaction_type: existing.transaction_type
+      };
+
       const updateData = {};
       if (body.transaction_type !== undefined) updateData.transaction_type = body.transaction_type;
       if (body.amount !== undefined) updateData.amount = parseFloat(body.amount);
@@ -634,19 +776,21 @@ export async function PUT(request) {
       if (body.from_director_id !== undefined) updateData.from_director_id = body.from_director_id;
       if (body.to_director_id !== undefined) updateData.to_director_id = body.to_director_id;
       if (body.description !== undefined) updateData.description = body.description;
+      if (body.bank_name !== undefined) updateData.bank_name = body.bank_name || null;
+      if (body.transaction_id !== undefined) updateData.transaction_id = body.transaction_id || null;
       if (body.transaction_date !== undefined) updateData.transaction_date = new Date(body.transaction_date);
       updateData.updated_at = new Date();
-      
-      const result = await db.collection('transactions').updateOne(
-        { id },
-        { $set: updateData }
-      );
-      
-      if (result.matchedCount === 0) {
-        return NextResponse.json({ error: 'Transaction not found' }, { status: 404 });
-      }
-      
+      updateData.updated_by = user.sub;
+
+      await db.collection('transactions').updateOne({ id }, { $set: updateData });
+
       const transaction = await db.collection('transactions').findOne({ id });
+      await insertTransactionAudit(db, {
+        action: 'update',
+        actorId: user.sub,
+        transaction,
+        previous
+      });
       return NextResponse.json(transaction);
     }
     
@@ -715,13 +859,29 @@ export async function DELETE(request) {
     // Transactions - Delete
     if (path.startsWith('/transactions/')) {
       const id = path.split('/')[2];
-      const result = await db.collection('transactions').deleteOne({ id });
-      
-      if (result.deletedCount === 0) {
+      const existing = await db.collection('transactions').findOne({ id, is_deleted: { $ne: true } });
+      if (!existing) {
         return NextResponse.json({ error: 'Transaction not found' }, { status: 404 });
       }
-      
-      return NextResponse.json({ message: 'Transaction deleted' });
+
+      await insertTransactionAudit(db, {
+        action: 'delete',
+        actorId: user.sub,
+        transaction: existing
+      });
+      await db.collection('transactions').updateOne(
+        { id },
+        {
+          $set: {
+            is_deleted: true,
+            deleted_at: new Date(),
+            deleted_by: user.sub,
+            updated_at: new Date(),
+            updated_by: user.sub
+          }
+        }
+      );
+      return NextResponse.json({ message: 'Transaction deleted (soft)' });
     }
     
     // Directors - Delete
