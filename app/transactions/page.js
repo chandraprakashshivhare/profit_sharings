@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import Navbar from '@/components/Navbar';
 import { Button } from '@/components/ui/button';
@@ -28,6 +29,18 @@ import { apiDownload, apiRequest } from '@/lib/api';
 import { formatDashboardPeriodLabel } from '@/lib/dashboardData';
 
 export default function TransactionsPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const isHistoryView = searchParams.get('history') === '1';
+  const initialPeriod = isHistoryView ? (searchParams.get('period') || 'all') : 'all';
+  const initialMonth = isHistoryView
+    ? (searchParams.get('month') ?? new Date().getMonth().toString())
+    : new Date().getMonth().toString();
+  const initialYear = isHistoryView
+    ? (searchParams.get('year') ?? new Date().getFullYear().toString())
+    : new Date().getFullYear().toString();
+  const initialType = isHistoryView ? (searchParams.get('type') || 'all') : 'all';
+  const initialProjectId = isHistoryView ? (searchParams.get('project_id') || 'all') : 'all';
   const [transactions, setTransactions] = useState([]);
   const [deletedTransactions, setDeletedTransactions] = useState([]);
   const [directors, setDirectors] = useState([]);
@@ -35,10 +48,11 @@ export default function TransactionsPage() {
   const [loading, setLoading] = useState(true);
   const [loadingDeleted, setLoadingDeleted] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const [period, setPeriod] = useState('all');
-  const [typeFilter, setTypeFilter] = useState('all');
-  const [month, setMonth] = useState(new Date().getMonth().toString());
-  const [year, setYear] = useState(new Date().getFullYear().toString());
+  const [period, setPeriod] = useState(initialPeriod);
+  const [typeFilter, setTypeFilter] = useState(initialType);
+  const [projectFilterId, setProjectFilterId] = useState(initialProjectId);
+  const [month, setMonth] = useState(initialMonth);
+  const [year, setYear] = useState(initialYear);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteInProgress, setDeleteInProgress] = useState(false);
@@ -67,6 +81,9 @@ export default function TransactionsPage() {
     if (typeFilter !== 'all') {
       qs += `&type=${typeFilter}`;
     }
+    if (projectFilterId && projectFilterId !== 'all') {
+      qs += `&project_id=${projectFilterId}`;
+    }
     return qs;
   };
 
@@ -85,8 +102,14 @@ export default function TransactionsPage() {
   }, []);
 
   useEffect(() => {
+    if (isHistoryView) {
+      router.replace('/transactions');
+    }
+  }, [isHistoryView, router]);
+
+  useEffect(() => {
     fetchTransactions();
-  }, [period, month, year, typeFilter]);
+  }, [period, month, year, typeFilter, projectFilterId]);
 
   const fetchTransactions = async () => {
     setLoading(true);
@@ -352,6 +375,20 @@ export default function TransactionsPage() {
                   <SelectItem value="expense">Expense</SelectItem>
                   <SelectItem value="loan">Loan</SelectItem>
                   <SelectItem value="transfer">Transfer</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Select value={projectFilterId} onValueChange={setProjectFilterId}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Project" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Projects</SelectItem>
+                  {projects.map((project) => (
+                    <SelectItem key={project.id} value={project.id}>
+                      {project.name}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
 

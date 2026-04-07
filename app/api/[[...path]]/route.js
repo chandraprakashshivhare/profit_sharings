@@ -123,8 +123,9 @@ export async function GET(request) {
       const year = searchParams.get('year');
       const type = searchParams.get('type');
       const directorId = searchParams.get('director_id');
+      const projectId = searchParams.get('project_id');
 
-      const query = buildTransactionsListQuery({ period, month, year, type, directorId });
+      const query = buildTransactionsListQuery({ period, month, year, type, directorId, projectId });
       const transactions = await db.collection('transactions').find(query).sort({ transaction_date: -1 }).toArray();
 
       const directors = await db
@@ -161,9 +162,10 @@ export async function GET(request) {
       const year = searchParams.get('year');
       const type = searchParams.get('type');
       const directorId = searchParams.get('director_id');
+      const projectId = searchParams.get('project_id');
 
-      const query = buildTransactionsListQuery({ period, month, year, type, directorId });
-      const transactions = await db.collection('transactions').find(query).sort({ created_at: -1 }).toArray();
+      const query = buildTransactionsListQuery({ period, month, year, type, directorId, projectId });
+      const transactions = await db.collection('transactions').find(query).sort({ transaction_date: -1 }).toArray();
       return NextResponse.json(transactions);
     }
 

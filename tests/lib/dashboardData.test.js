@@ -39,11 +39,17 @@ describe('lib/dashboardData', () => {
   });
 
   it('buildTransactionsListQuery adds optional filters', () => {
-    const q = buildTransactionsListQuery({ period: 'all', type: 'income', directorId: 'd1' });
+    const q = buildTransactionsListQuery({
+      period: 'all',
+      type: 'income',
+      directorId: 'd1',
+      projectId: 'p1'
+    });
     expect(q).toEqual({
       is_deleted: { $ne: true },
       transaction_type: 'income',
-      director_id: 'd1'
+      director_id: 'd1',
+      project_id: 'p1'
     });
   });
 
