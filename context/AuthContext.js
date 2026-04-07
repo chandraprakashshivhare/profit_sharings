@@ -26,6 +26,16 @@ export function AuthProvider({ children }) {
     checkAuth();
   }, []);
 
+  useEffect(() => {
+    const handleAuthExpired = () => {
+      localStorage.removeItem('access_token');
+      setUser(false);
+      router.push('/login');
+    };
+    window.addEventListener('auth:expired', handleAuthExpired);
+    return () => window.removeEventListener('auth:expired', handleAuthExpired);
+  }, [router]);
+
   const checkAuth = async () => {
     try {
       const token = localStorage.getItem('access_token');
