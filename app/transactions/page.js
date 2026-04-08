@@ -72,6 +72,10 @@ export default function TransactionsPage() {
   const [loading, setLoading] = useState(true);
   const [loadingDeleted, setLoadingDeleted] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState('20');
+  const [totalItems, setTotalItems] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
   const [period, setPeriod] = useState(initialPeriod);
   const [typeFilter, setTypeFilter] = useState(initialType);
   const [projectFilterId, setProjectFilterId] = useState(initialProjectId);
@@ -122,6 +126,7 @@ export default function TransactionsPage() {
     if (projectFilterId && projectFilterId !== 'all') {
       qs += `&project_id=${projectFilterId}`;
     }
+    qs += `&page=${page}&limit=${pageSize}`;
     return qs;
   };
 
@@ -157,7 +162,11 @@ export default function TransactionsPage() {
 
   useEffect(() => {
     fetchTransactions();
-  }, [period, month, year, typeFilter, projectFilterId, companySelected, selectedDirectorIds]);
+  }, [period, month, year, typeFilter, projectFilterId, companySelected, selectedDirectorIds, page, pageSize]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [period, month, year, typeFilter, projectFilterId, companySelected, selectedDirectorIds, pageSize]);
 
   const fetchTransactions = async () => {
     setLoading(true);
@@ -165,7 +174,15 @@ export default function TransactionsPage() {
       const response = await apiRequest(`/api/transactions?${transactionsQueryString()}`);
       if (response.ok) {
         const data = await response.json();
-        setTransactions(data);
+        if (Array.isArray(data)) {
+          setTransactions(data);
+          setTotalItems(data.length);
+          setTotalPages(1);
+        } else {
+          setTransactions(data.items || []);
+          setTotalItems(data.total || 0);
+          setTotalPages(data.totalPages || 1);
+        }
       } else {
         toast.error('Failed to load transactions');
       }
@@ -895,6 +912,46 @@ export default function TransactionsPage() {
                           ))}
                         </TableBody>
                       </Table>
+                    </div>
+                    <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="text-muted-foreground">Show</span>
+                        <Select value={pageSize} onValueChange={setPageSize}>
+                          <SelectTrigger className="w-[90px] h-8">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="10">10</SelectItem>
+                            <SelectItem value="20">20</SelectItem>
+                            <SelectItem value="50">50</SelectItem>
+                            <SelectItem value="100">100</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <span className="text-muted-foreground">records</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-muted-foreground">
+                          Page {page} of {totalPages} ({totalItems} records)
+                        </span>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={page <= 1}
+                          onClick={() => setPage((p) => Math.max(1, p - 1))}
+                        >
+                          Previous
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={page >= totalPages}
+                          onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                        >
+                          Next
+                        </Button>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>

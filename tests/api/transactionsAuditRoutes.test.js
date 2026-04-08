@@ -172,6 +172,30 @@ describe('api route GET - transactions and transaction-audit', () => {
     }
   });
 
+  it('transactions pagination returns items with total metadata', async () => {
+    const { mem, GET, token } = await setupRouteWithMemoryDb();
+    try {
+      await mem.db.collection('transactions').insertMany([
+        { id: uuidv4(), transaction_id: 'A', transaction_type: 'income', amount: 1, transaction_date: new Date('2026-01-01') },
+        { id: uuidv4(), transaction_id: 'B', transaction_type: 'income', amount: 2, transaction_date: new Date('2026-01-02') },
+        { id: uuidv4(), transaction_id: 'C', transaction_type: 'income', amount: 3, transaction_date: new Date('2026-01-03') }
+      ]);
+
+      const req = makeAuthedRequest('http://localhost:3000/api/transactions?period=all&page=2&limit=2', token);
+      const res = await GET(req);
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(Array.isArray(data.items)).toBe(true);
+      expect(data.page).toBe(2);
+      expect(data.limit).toBe(2);
+      expect(data.total).toBe(3);
+      expect(data.totalPages).toBe(2);
+      expect(data.items.map((r) => r.transaction_id)).toEqual(['A']);
+    } finally {
+      await mem.stop();
+    }
+  });
+
   it('transactions CSV export order matches list order (latest first)', async () => {
     const { mem, GET, token } = await setupRouteWithMemoryDb();
     try {

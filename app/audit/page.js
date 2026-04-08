@@ -22,6 +22,10 @@ export default function AuditPage() {
   const [period, setPeriod] = useState('all');
   const [month, setMonth] = useState(new Date().getMonth().toString());
   const [year, setYear] = useState(new Date().getFullYear().toString());
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState('20');
+  const [totalItems, setTotalItems] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
 
   const auditQueryString = () => {
     let qs = `period=${period}`;
@@ -30,6 +34,7 @@ export default function AuditPage() {
     } else if (period === 'year') {
       qs += `&year=${year}`;
     }
+    qs += `&page=${page}&limit=${pageSize}`;
     return qs;
   };
 
@@ -60,14 +65,27 @@ export default function AuditPage() {
 
   useEffect(() => {
     fetchAudit();
-  }, [period, month, year]);
+  }, [period, month, year, page, pageSize]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [period, month, year, pageSize]);
 
   const fetchAudit = async () => {
     setLoading(true);
     try {
       const response = await apiRequest(`/api/transaction-audit?${auditQueryString()}`);
       if (response.ok) {
-        setEntries(await response.json());
+        const data = await response.json();
+        if (Array.isArray(data)) {
+          setEntries(data);
+          setTotalItems(data.length);
+          setTotalPages(1);
+        } else {
+          setEntries(data.items || []);
+          setTotalItems(data.total || 0);
+          setTotalPages(data.totalPages || 1);
+        }
       } else {
         toast.error('Failed to load audit log');
       }
@@ -380,6 +398,46 @@ export default function AuditPage() {
                       ))}
                     </TableBody>
                   </Table>
+                </div>
+                <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="text-muted-foreground">Show</span>
+                    <Select value={pageSize} onValueChange={setPageSize}>
+                      <SelectTrigger className="w-[90px] h-8">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="10">10</SelectItem>
+                        <SelectItem value="20">20</SelectItem>
+                        <SelectItem value="50">50</SelectItem>
+                        <SelectItem value="100">100</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <span className="text-muted-foreground">records</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-muted-foreground">
+                      Page {page} of {totalPages} ({totalItems} records)
+                    </span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={page <= 1}
+                      onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    >
+                      Previous
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={page >= totalPages}
+                      onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    >
+                      Next
+                    </Button>
+                  </div>
                 </div>
               </CardContent>
             </Card>
