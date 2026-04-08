@@ -42,15 +42,58 @@ describe('lib/dashboardData', () => {
     const q = buildTransactionsListQuery({
       period: 'all',
       type: 'income',
+      accountType: 'director',
       directorId: 'd1',
       projectId: 'p1'
     });
     expect(q).toEqual({
       is_deleted: { $ne: true },
       transaction_type: 'income',
-      director_id: 'd1',
+      account_type: 'director',
+      director_id: { $in: ['d1'] },
       project_id: 'p1'
     });
+  });
+
+  it('buildTransactionsListQuery supports project-only filter', () => {
+    const q = buildTransactionsListQuery({ period: 'all', projectId: 'p-only' });
+    expect(q).toEqual({
+      is_deleted: { $ne: true },
+      project_id: 'p-only'
+    });
+  });
+
+  it('buildTransactionsListQuery supports multi company + multiple directors', () => {
+    const q = buildTransactionsListQuery({
+      period: 'all',
+      accountTypes: ['company', 'director'],
+      directorIds: ['d1', 'd2']
+    });
+
+    expect(q).toEqual({
+      is_deleted: { $ne: true },
+      $or: [
+        { account_type: 'company' },
+        { account_type: 'director', director_id: { $in: ['d1', 'd2'] } }
+      ]
+    });
+  });
+
+  it('buildTransactionsListQuery keeps month range and adds project/type', () => {
+    const q = buildTransactionsListQuery({
+      period: 'month',
+      month: '1',
+      year: '2026',
+      projectId: 'p2',
+      type: 'income'
+    });
+
+    expect(q.transaction_date.$gte).toBeInstanceOf(Date);
+    expect(q.transaction_date.$lte).toBeInstanceOf(Date);
+    expect(ymdLocal(q.transaction_date.$gte)).toBe('2026-02-01');
+    expect(ymdLocal(q.transaction_date.$lte)).toBe('2026-02-28');
+    expect(q.project_id).toBe('p2');
+    expect(q.transaction_type).toBe('income');
   });
 
   it('buildAuditListQuery maps transaction_date range to recorded_at', () => {

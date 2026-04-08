@@ -122,10 +122,26 @@ export async function GET(request) {
       const month = searchParams.get('month');
       const year = searchParams.get('year');
       const type = searchParams.get('type');
+      const accountType = searchParams.get('account_type');
+      const accountTypesParam = searchParams.get('account_types');
+      const directorIdsParam = searchParams.get('director_ids');
       const directorId = searchParams.get('director_id');
       const projectId = searchParams.get('project_id');
 
-      const query = buildTransactionsListQuery({ period, month, year, type, directorId, projectId });
+      const accountTypes = accountTypesParam ? accountTypesParam.split(',') : undefined;
+      const directorIds = directorIdsParam ? directorIdsParam.split(',') : undefined;
+
+      const query = buildTransactionsListQuery({
+        period,
+        month,
+        year,
+        type,
+        accountType,
+        directorId,
+        accountTypes,
+        directorIds,
+        projectId
+      });
       const transactions = await db.collection('transactions').find(query).sort({ transaction_date: -1 }).toArray();
 
       const directors = await db
@@ -161,10 +177,26 @@ export async function GET(request) {
       const month = searchParams.get('month');
       const year = searchParams.get('year');
       const type = searchParams.get('type');
+      const accountType = searchParams.get('account_type');
+      const accountTypesParam = searchParams.get('account_types');
+      const directorIdsParam = searchParams.get('director_ids');
       const directorId = searchParams.get('director_id');
       const projectId = searchParams.get('project_id');
 
-      const query = buildTransactionsListQuery({ period, month, year, type, directorId, projectId });
+      const accountTypes = accountTypesParam ? accountTypesParam.split(',') : undefined;
+      const directorIds = directorIdsParam ? directorIdsParam.split(',') : undefined;
+
+      const query = buildTransactionsListQuery({
+        period,
+        month,
+        year,
+        type,
+        accountType,
+        directorId,
+        accountTypes,
+        directorIds,
+        projectId
+      });
       const transactions = await db.collection('transactions').find(query).sort({ transaction_date: -1 }).toArray();
       return NextResponse.json(transactions);
     }
