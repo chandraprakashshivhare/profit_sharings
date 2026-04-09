@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { v4 as uuidv4 } from 'uuid';
 import { createInMemoryMongo } from '../helpers/mongo.js';
-import { getCompanyDashboardData, getDirectorDashboardData } from '../../lib/dashboardData.js';
+import {
+  buildTransactionsListQuery,
+  getCompanyDashboardData,
+  getDirectorDashboardData
+} from '../../lib/dashboardData.js';
 
 describe('lib/dashboardData integration with Mongo', () => {
   it('getCompanyDashboardData excludes soft-deleted transactions', async () => {
@@ -120,6 +124,61 @@ describe('lib/dashboardData integration with Mongo', () => {
       expect(data.transfersIn).toBe(5);
       expect(data.totalApprovedDirectors).toBe(2);
       expect(typeof data.balance).toBe('number');
+    } finally {
+      await mem.stop();
+    }
+  });
+
+  it('buildTransactionsListQuery filters by selected month + project and excludes deleted', async () => {
+    const mem = await createInMemoryMongo();
+    try {
+      const p1 = uuidv4();
+      const p2 = uuidv4();
+
+      await mem.db.collection('transactions').insertMany([
+        {
+          id: uuidv4(),
+          transaction_type: 'income',
+          amount: 100,
+          project_id: p1,
+          transaction_date: new Date('2026-01-10')
+        },
+        {
+          id: uuidv4(),
+          transaction_type: 'income',
+          amount: 200,
+          project_id: p2,
+          transaction_date: new Date('2026-01-11')
+        },
+        {
+          id: uuidv4(),
+          transaction_type: 'income',
+          amount: 300,
+          project_id: p1,
+          transaction_date: new Date('2026-02-12')
+        },
+        {
+          id: uuidv4(),
+          transaction_type: 'income',
+          amount: 999,
+          project_id: p1,
+          is_deleted: true,
+          transaction_date: new Date('2026-01-15')
+        }
+      ]);
+
+      const query = buildTransactionsListQuery({
+        period: 'month',
+        month: '0',
+        year: '2026',
+        type: 'income',
+        projectId: p1
+      });
+      const rows = await mem.db.collection('transactions').find(query).toArray();
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0].project_id).toBe(p1);
+      expect(rows[0].amount).toBe(100);
     } finally {
       await mem.stop();
     }

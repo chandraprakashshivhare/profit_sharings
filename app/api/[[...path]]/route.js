@@ -122,9 +122,26 @@ export async function GET(request) {
       const month = searchParams.get('month');
       const year = searchParams.get('year');
       const type = searchParams.get('type');
+      const accountType = searchParams.get('account_type');
+      const accountTypesParam = searchParams.get('account_types');
+      const directorIdsParam = searchParams.get('director_ids');
       const directorId = searchParams.get('director_id');
+      const projectId = searchParams.get('project_id');
 
-      const query = buildTransactionsListQuery({ period, month, year, type, directorId });
+      const accountTypes = accountTypesParam ? accountTypesParam.split(',') : undefined;
+      const directorIds = directorIdsParam ? directorIdsParam.split(',') : undefined;
+
+      const query = buildTransactionsListQuery({
+        period,
+        month,
+        year,
+        type,
+        accountType,
+        directorId,
+        accountTypes,
+        directorIds,
+        projectId
+      });
       const transactions = await db.collection('transactions').find(query).sort({ transaction_date: -1 }).toArray();
 
       const directors = await db
@@ -160,11 +177,50 @@ export async function GET(request) {
       const month = searchParams.get('month');
       const year = searchParams.get('year');
       const type = searchParams.get('type');
+      const accountType = searchParams.get('account_type');
+      const accountTypesParam = searchParams.get('account_types');
+      const directorIdsParam = searchParams.get('director_ids');
       const directorId = searchParams.get('director_id');
+      const projectId = searchParams.get('project_id');
+      const pageParam = searchParams.get('page');
+      const limitParam = searchParams.get('limit');
 
-      const query = buildTransactionsListQuery({ period, month, year, type, directorId });
-      const transactions = await db.collection('transactions').find(query).sort({ created_at: -1 }).toArray();
-      return NextResponse.json(transactions);
+      const accountTypes = accountTypesParam ? accountTypesParam.split(',') : undefined;
+      const directorIds = directorIdsParam ? directorIdsParam.split(',') : undefined;
+
+      const query = buildTransactionsListQuery({
+        period,
+        month,
+        year,
+        type,
+        accountType,
+        directorId,
+        accountTypes,
+        directorIds,
+        projectId
+      });
+      const page = Math.max(1, parseInt(pageParam || '1', 10) || 1);
+      const limit = Math.min(200, Math.max(1, parseInt(limitParam || '20', 10) || 20));
+      const skip = (page - 1) * limit;
+
+      const collection = db.collection('transactions');
+      const [transactions, total] = await Promise.all([
+        collection.find(query).sort({ transaction_date: -1 }).skip(skip).limit(limit).toArray(),
+        collection.countDocuments(query)
+      ]);
+
+      if (!pageParam && !limitParam) {
+        // Backward compatibility for existing callers/tests.
+        return NextResponse.json(transactions);
+      }
+
+      return NextResponse.json({
+        items: transactions,
+        page,
+        limit,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / limit))
+      });
     }
 
     // Transactions - List (soft deleted only, all time)
@@ -240,14 +296,32 @@ export async function GET(request) {
       const period = searchParams.get('period') || 'all';
       const month = searchParams.get('month');
       const year = searchParams.get('year');
+      const pageParam = searchParams.get('page');
+      const limitParam = searchParams.get('limit');
 
       const query = buildAuditListQuery({ period, month, year });
-      const entries = await db
-        .collection('transaction_audit')
-        .find(query)
-        .sort({ recorded_at: -1 })
-        .toArray();
-      return NextResponse.json(entries);
+      const page = Math.max(1, parseInt(pageParam || '1', 10) || 1);
+      const limit = Math.min(200, Math.max(1, parseInt(limitParam || '20', 10) || 20));
+      const skip = (page - 1) * limit;
+
+      const collection = db.collection('transaction_audit');
+      const [entries, total] = await Promise.all([
+        collection.find(query).sort({ recorded_at: -1 }).skip(skip).limit(limit).toArray(),
+        collection.countDocuments(query)
+      ]);
+
+      if (!pageParam && !limitParam) {
+        // Backward compatibility for existing callers/tests.
+        return NextResponse.json(entries);
+      }
+
+      return NextResponse.json({
+        items: entries,
+        page,
+        limit,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / limit))
+      });
     }
 
     // Directors - List (only approved)

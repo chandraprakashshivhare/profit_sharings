@@ -23,7 +23,8 @@ export default function DashboardPage() {
   const [directors, setDirectors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(null);
-  const otherDirectors = directors.filter((d) => d.id !== user?.id);
+  // For company overview we want all approved directors (including logged-in) in the cards.
+  const otherDirectors = directors;
 
   const dashboardQueryString = () => {
     let qs = `period=${period}`;

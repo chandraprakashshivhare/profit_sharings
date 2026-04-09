@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import Navbar from '@/components/Navbar';
 import { Button } from '@/components/ui/button';
@@ -20,14 +21,50 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus, Pencil, Trash2, ArrowUpCircle, ArrowDownCircle, Repeat, ArrowRightLeft, Download } from 'lucide-react';
+import { Plus, Pencil, Trash2, ArrowUpCircle, ArrowDownCircle, Repeat, ArrowRightLeft, Download, Users, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { apiDownload, apiRequest } from '@/lib/api';
 import { formatDashboardPeriodLabel } from '@/lib/dashboardData';
+import { Checkbox } from '@/components/ui/checkbox';
 
 export default function TransactionsPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const isHistoryView = searchParams.get('history') === '1';
+  const initialPeriod = isHistoryView ? (searchParams.get('period') || 'all') : 'all';
+  const initialMonth = isHistoryView
+    ? (searchParams.get('month') ?? new Date().getMonth().toString())
+    : new Date().getMonth().toString();
+  const initialYear = isHistoryView
+    ? (searchParams.get('year') ?? new Date().getFullYear().toString())
+    : new Date().getFullYear().toString();
+  const initialType = isHistoryView ? (searchParams.get('type') || 'all') : 'all';
+  const initialProjectId = isHistoryView ? (searchParams.get('project_id') || 'all') : 'all';
+  const urlAccountTypesParam = searchParams.get('account_types');
+  const urlDirectorIdsParam = searchParams.get('director_ids');
+  const urlAccountTypeLegacy = searchParams.get('account_type');
+  const urlDirectorIdLegacy = searchParams.get('director_id');
+
+  const hasAccountFilterFromUrl = Boolean(
+    urlAccountTypesParam || urlDirectorIdsParam || urlAccountTypeLegacy || urlDirectorIdLegacy
+  );
+
+  const initialCompanySelected = isHistoryView
+    ? (urlAccountTypesParam
+        ? urlAccountTypesParam.split(',').includes('company')
+        : urlAccountTypeLegacy === 'company')
+    : true;
+
+  const initialSelectedDirectorIds = isHistoryView
+    ? (urlDirectorIdsParam
+        ? urlDirectorIdsParam.split(',').filter(Boolean)
+        : urlAccountTypeLegacy === 'director' && urlDirectorIdLegacy
+          ? [urlDirectorIdLegacy]
+          : [])
+    : [];
   const [transactions, setTransactions] = useState([]);
   const [deletedTransactions, setDeletedTransactions] = useState([]);
   const [directors, setDirectors] = useState([]);
@@ -35,10 +72,18 @@ export default function TransactionsPage() {
   const [loading, setLoading] = useState(true);
   const [loadingDeleted, setLoadingDeleted] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const [period, setPeriod] = useState('all');
-  const [typeFilter, setTypeFilter] = useState('all');
-  const [month, setMonth] = useState(new Date().getMonth().toString());
-  const [year, setYear] = useState(new Date().getFullYear().toString());
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState('20');
+  const [totalItems, setTotalItems] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [period, setPeriod] = useState(initialPeriod);
+  const [typeFilter, setTypeFilter] = useState(initialType);
+  const [projectFilterId, setProjectFilterId] = useState(initialProjectId);
+  const [companySelected, setCompanySelected] = useState(initialCompanySelected);
+  const [selectedDirectorIds, setSelectedDirectorIds] = useState(initialSelectedDirectorIds);
+  const [accountSelectionInitialized, setAccountSelectionInitialized] = useState(false);
+  const [month, setMonth] = useState(initialMonth);
+  const [year, setYear] = useState(initialYear);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteInProgress, setDeleteInProgress] = useState(false);
@@ -67,6 +112,21 @@ export default function TransactionsPage() {
     if (typeFilter !== 'all') {
       qs += `&type=${typeFilter}`;
     }
+
+    const accountTypes = [];
+    if (companySelected) accountTypes.push('company');
+    if (selectedDirectorIds.length > 0) accountTypes.push('director');
+    if (accountTypes.length > 0) {
+      qs += `&account_types=${accountTypes.join(',')}`;
+      if (accountTypes.includes('director')) {
+        qs += `&director_ids=${encodeURIComponent(selectedDirectorIds.join(','))}`;
+      }
+    }
+
+    if (projectFilterId && projectFilterId !== 'all') {
+      qs += `&project_id=${projectFilterId}`;
+    }
+    qs += `&page=${page}&limit=${pageSize}`;
     return qs;
   };
 
@@ -85,8 +145,28 @@ export default function TransactionsPage() {
   }, []);
 
   useEffect(() => {
+    if (isHistoryView) {
+      router.replace('/transactions');
+    }
+  }, [isHistoryView, router]);
+
+  useEffect(() => {
+    if (directors.length === 0) return;
+    if (accountSelectionInitialized) return;
+    if (hasAccountFilterFromUrl) return;
+    // Default: show all accounts (company + all directors)
+    setCompanySelected(true);
+    setSelectedDirectorIds(directors.map((d) => d.id));
+    setAccountSelectionInitialized(true);
+  }, [directors, accountSelectionInitialized, hasAccountFilterFromUrl]);
+
+  useEffect(() => {
     fetchTransactions();
-  }, [period, month, year, typeFilter]);
+  }, [period, month, year, typeFilter, projectFilterId, companySelected, selectedDirectorIds, page, pageSize]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [period, month, year, typeFilter, projectFilterId, companySelected, selectedDirectorIds, pageSize]);
 
   const fetchTransactions = async () => {
     setLoading(true);
@@ -94,7 +174,15 @@ export default function TransactionsPage() {
       const response = await apiRequest(`/api/transactions?${transactionsQueryString()}`);
       if (response.ok) {
         const data = await response.json();
-        setTransactions(data);
+        if (Array.isArray(data)) {
+          setTransactions(data);
+          setTotalItems(data.length);
+          setTotalPages(1);
+        } else {
+          setTransactions(data.items || []);
+          setTotalItems(data.total || 0);
+          setTotalPages(data.totalPages || 1);
+        }
       } else {
         toast.error('Failed to load transactions');
       }
@@ -352,6 +440,74 @@ export default function TransactionsPage() {
                   <SelectItem value="expense">Expense</SelectItem>
                   <SelectItem value="loan">Loan</SelectItem>
                   <SelectItem value="transfer">Transfer</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button type="button" variant="outline" size="sm" className="w-[160px] justify-between">
+                    <span className="flex items-center gap-2">
+                      <Users className="h-4 w-4" />
+                      Accounts
+                    </span>
+                    <ChevronDown className="h-4 w-4 opacity-70" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-[280px]">
+                  <DropdownMenuLabel className="flex items-center justify-between">
+                    <span>Accounts</span>
+                    <span className="text-xs text-muted-foreground">
+                      {companySelected ? 1 : 0} company, {selectedDirectorIds.length} directors
+                    </span>
+                  </DropdownMenuLabel>
+                  <DropdownMenuItem
+                    className="gap-2 px-2 py-1.5 cursor-pointer"
+                    onSelect={(e) => e.preventDefault()}
+                  >
+                    <Checkbox
+                      checked={companySelected}
+                      onCheckedChange={(checked) => setCompanySelected(Boolean(checked))}
+                    />
+                    <span>Company</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  {directors.length === 0 ? (
+                    <div className="px-2 py-1.5 text-sm text-muted-foreground">Loading directors…</div>
+                  ) : (
+                    directors.map((d) => (
+                      <DropdownMenuItem
+                        key={d.id}
+                        className="gap-2 px-2 py-1.5 cursor-pointer"
+                        onSelect={(e) => e.preventDefault()}
+                      >
+                        <Checkbox
+                          checked={selectedDirectorIds.includes(d.id)}
+                          onCheckedChange={(checked) => {
+                            const checkedBool = Boolean(checked);
+                            setSelectedDirectorIds((prev) => {
+                              if (checkedBool) return Array.from(new Set([...prev, d.id]));
+                              return prev.filter((id) => id !== d.id);
+                            });
+                          }}
+                        />
+                        <span>{d.name}</span>
+                      </DropdownMenuItem>
+                    ))
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              <Select value={projectFilterId} onValueChange={setProjectFilterId}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Project" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Projects</SelectItem>
+                  {projects.map((project) => (
+                    <SelectItem key={project.id} value={project.id}>
+                      {project.name}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
 
@@ -756,6 +912,46 @@ export default function TransactionsPage() {
                           ))}
                         </TableBody>
                       </Table>
+                    </div>
+                    <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="text-muted-foreground">Show</span>
+                        <Select value={pageSize} onValueChange={setPageSize}>
+                          <SelectTrigger className="w-[90px] h-8">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="10">10</SelectItem>
+                            <SelectItem value="20">20</SelectItem>
+                            <SelectItem value="50">50</SelectItem>
+                            <SelectItem value="100">100</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <span className="text-muted-foreground">records</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-muted-foreground">
+                          Page {page} of {totalPages} ({totalItems} records)
+                        </span>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={page <= 1}
+                          onClick={() => setPage((p) => Math.max(1, p - 1))}
+                        >
+                          Previous
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={page >= totalPages}
+                          onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                        >
+                          Next
+                        </Button>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>

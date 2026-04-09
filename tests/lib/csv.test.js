@@ -55,6 +55,34 @@ describe('lib/csv', () => {
     expect(csv).toContain('Project One');
   });
 
+  it('transactionsListExportCsv prefers updated_by and falls back to raw actor id', () => {
+    const rows = [
+      {
+        transaction_id: 'TXN-2',
+        bank_name: 'SBI',
+        transaction_date: new Date('2026-01-04'),
+        transaction_type: 'expense',
+        amount: 450,
+        description: 'updated actor test',
+        created_by: 'd-created',
+        updated_by: 'd-updated'
+      },
+      {
+        transaction_id: 'TXN-3',
+        bank_name: 'ICICI',
+        transaction_date: new Date('2026-01-05'),
+        transaction_type: 'income',
+        amount: 650,
+        description: 'raw actor id fallback',
+        created_by: 'unknown-id'
+      }
+    ];
+    const csv = transactionsListExportCsv(rows, { 'd-updated': 'Updated User' }, {});
+    expect(csv).toContain('Updated User');
+    expect(csv).toContain('unknown-id');
+    expect(csv).not.toContain('d-created');
+  });
+
   it('transactionAuditExportCsv maps actor/directors/projects and ids', () => {
     const entries = [
       {
